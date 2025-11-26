@@ -129,9 +129,9 @@ const plugin: JupyterFrontEndPlugin<void> = {
     fileBrowser: IDefaultFileBrowser,
     terminalTracker: ITerminalTracker
   ) => {
-    // console.log(
-    //   'JupyterLab extension jupyterlab_terminal_show_in_file_browser_extension is activated!'
-    // );
+    console.log(
+      'JupyterLab extension jupyterlab_terminal_show_in_file_browser_extension is activated!'
+    );
 
     const { commands } = app;
 

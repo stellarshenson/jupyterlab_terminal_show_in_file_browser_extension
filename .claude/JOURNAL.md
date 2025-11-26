@@ -23,4 +23,4 @@ This journal tracks substantive work on documents, diagrams, and documentation c
     **Result**: Updated package.json with GitHub URLs (homepage, bugs, repository). Enhanced build.yml with server extension verification, check_links with ignore_links for badge URLs. Workflows aligned with jupyterlab_tabular_data_viewer_extension reference implementation
 
 7. **Task - Comment out debug code**: Removed debug logging from production build<br>
-    **Result**: Commented out all console.log debug statements in src/index.ts. Retained console.warn and console.error for actual error handling
+    **Result**: Commented out debug console.log statements in src/index.ts. Retained standard activation message for UI tests, plus console.warn and console.error for error handling
