@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Terminal Show in File Browser",
+  "description": "Settings for jupyterlab_terminal_show_in_file_browser_extension",
+  "type": "object",
+  "jupyter.lab.menus": {
+    "context": [
+      {
+        "command": "terminal:show-in-file-browser",
+        "selector": "#jp-main-dock-panel .lm-DockPanel-tabBar .lm-TabBar-tab",
+        "rank": 6
+      },
+      {
+        "command": "terminal:show-in-file-browser",
+        "selector": ".jp-Terminal",
+        "rank": 10
+      }
+    ]
+  },
+  "properties": {},
+  "additionalProperties": false
+}
