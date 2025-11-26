@@ -12,3 +12,15 @@ This journal tracks substantive work on documents, diagrams, and documentation c
 
 3. **Task - Add server-side cwd tracking**: Implemented server extension to query terminal process cwd<br>
     **Result**: Created `handlers.py` with `TerminalCwdHandler` providing `/api/terminal-cwd/{name}` endpoint. Handler queries terminal PTY process, finds child shell PID, reads cwd via `/proc/{pid}/cwd` (Linux) or `lsof` (macOS). Updated `__init__.py` with server extension registration. Created `jupyter-config/server-config/` with enablement config. Updated `pyproject.toml` with `jupyter_server` dependency and config file distribution. Frontend updated to call server API via `ServerConnection`. Extension builds successfully
+
+4. **Task - Fix context menu and path resolution**: Fixed multiple issues with context menu selector and path handling<br>
+    **Result**: Corrected context menu selector to `#jp-main-dock-panel .lm-DockPanel-tabBar .lm-TabBar-tab` for terminal tabs. Added tilde expansion for serverRoot comparison. Fixed relative-to-absolute path navigation using `/` prefix. Added PWD environment variable fallback in handler. Implemented graceful fallback to workspace root when terminal cwd is outside workspace
+
+5. **Task - Update README and CHANGELOG**: Updated documentation for v1.0.12<br>
+    **Result**: Rewrote README.md with badges, screenshot, features list, and humorous disclosure. Created CHANGELOG.md with v1.0.12 key features. Tagged STABLE_EXTENSION_WORKS
+
+6. **Task - GitHub workflows and package.json**: Configured CI/CD and package metadata<br>
+    **Result**: Updated package.json with GitHub URLs (homepage, bugs, repository). Enhanced build.yml with server extension verification, check_links with ignore_links for badge URLs. Workflows aligned with jupyterlab_tabular_data_viewer_extension reference implementation
+
+7. **Task - Comment out debug code**: Removed debug logging from production build<br>
+    **Result**: Commented out all console.log debug statements in src/index.ts. Retained console.warn and console.error for actual error handling

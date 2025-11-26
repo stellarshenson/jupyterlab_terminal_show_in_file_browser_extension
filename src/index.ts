@@ -129,16 +129,16 @@ const plugin: JupyterFrontEndPlugin<void> = {
     fileBrowser: IDefaultFileBrowser,
     terminalTracker: ITerminalTracker
   ) => {
-    console.log(
-      'JupyterLab extension jupyterlab_terminal_show_in_file_browser_extension is activated!'
-    );
+    // console.log(
+    //   'JupyterLab extension jupyterlab_terminal_show_in_file_browser_extension is activated!'
+    // );
 
     const { commands } = app;
 
     // Get the server root directory from PageConfig
     // This is the notebook_dir where Jupyter server was started
     const serverRoot = PageConfig.getOption('serverRoot');
-    console.log(`Server root: ${serverRoot}`);
+    // console.log(`Server root: ${serverRoot}`);
 
     // Add the command
     commands.addCommand(COMMAND_ID, {
@@ -178,30 +178,30 @@ const plugin: JupyterFrontEndPlugin<void> = {
           return;
         }
 
-        console.log(`Terminal cwd: ${cwd}`);
-        console.log(`Server root: ${serverRoot}`);
+        // console.log(`Terminal cwd: ${cwd}`);
+        // console.log(`Server root: ${serverRoot}`);
 
         // Convert absolute path to relative path for file browser
         const relativePath = toRelativePath(cwd, serverRoot);
 
         // If outside workspace, fallback to workspace root
         const targetPath = relativePath === null ? '' : relativePath;
-        if (relativePath === null) {
-          console.log(`Terminal cwd outside workspace, navigating to root`);
-        }
+        // if (relativePath === null) {
+        //   console.log(`Terminal cwd outside workspace, navigating to root`);
+        // }
 
-        console.log(`Relative path: "${targetPath}"`);
+        // console.log(`Relative path: "${targetPath}"`);
 
         try {
           // Navigate using absolute path from root
           // Use '/' prefix to ensure navigation from workspace root, not current directory
           const absolutePath = targetPath === '' ? '/' : '/' + targetPath;
-          console.log(`Navigating to absolute path: "${absolutePath}"`);
+          // console.log(`Navigating to absolute path: "${absolutePath}"`);
 
           await fileBrowser.model.cd(absolutePath);
-          console.log(
-            `File browser navigated to: ${targetPath || '(root)'}`
-          );
+          // console.log(
+          //   `File browser navigated to: ${targetPath || '(root)'}`
+          // );
         } catch (error) {
           console.error('Failed to navigate file browser:', error);
           await showErrorMessage(
@@ -213,7 +213,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
       }
     });
 
-    console.log(`Command registered: ${COMMAND_ID}`);
+    // console.log(`Command registered: ${COMMAND_ID}`);
   }
 };
 
