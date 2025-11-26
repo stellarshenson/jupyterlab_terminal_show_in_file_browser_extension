@@ -24,3 +24,6 @@ This journal tracks substantive work on documents, diagrams, and documentation c
 
 7. **Task - Comment out debug code**: Removed debug logging from production build<br>
     **Result**: Commented out debug console.log statements in src/index.ts. Retained standard activation message for UI tests, plus console.warn and console.error for error handling
+
+8. **Task - Release v1.0.15**: Tagged release version<br>
+    **Result**: Version bumped to 1.0.15, tagged RELEASE_1.0.15
