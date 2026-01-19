@@ -27,3 +27,6 @@ This journal tracks substantive work on documents, diagrams, and documentation c
 
 8. **Task - Release v1.0.15**: Tagged release version<br>
     **Result**: Version bumped to 1.0.15, tagged RELEASE_1.0.15
+
+9. **Task - Fix fish shell cwd detection** (v1.0.16): Fixed "CWD Not Available" error when using fish shell in terminal<br>
+    **Result**: The original `_get_child_pid()` method only found the first child process, which could miss the actual shell when fish or other shells have complex process trees. Replaced with `_get_all_child_pids()` that finds ALL child processes and prioritizes known shells (fish, bash, zsh, sh, dash, ksh, tcsh, csh) by reading `/proc/{pid}/comm`. Updated `_get_process_cwd()` to try the direct pty pid first, then iterate through all child candidates until a valid cwd is found. Added `_try_get_cwd()` helper method for cleaner separation. Files modified: `handlers.py`. Version auto-bumped to 1.0.16 during build

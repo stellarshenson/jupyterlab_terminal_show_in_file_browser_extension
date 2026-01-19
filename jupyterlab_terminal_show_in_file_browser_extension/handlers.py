@@ -77,10 +77,10 @@ class TerminalCwdHandler(APIHandler):
     def _get_process_cwd(self, pid: int) -> str | None:
         """Get the current working directory of a process.
 
-        Tries multiple methods:
-        1. Read /proc/{pid}/cwd symlink (Linux)
-        2. Read PWD from /proc/{pid}/environ (Linux)
-        3. Use lsof (macOS)
+        Tries multiple methods and process candidates:
+        1. Try the direct pid first (terminado spawns shell directly)
+        2. Try child processes, preferring known shells
+        3. For each candidate, try /proc/cwd, PWD environ, or lsof
 
         Args:
             pid: Process ID
@@ -88,40 +88,64 @@ class TerminalCwdHandler(APIHandler):
         Returns:
             The cwd path or None if it couldn't be determined
         """
-        # First, try to get the child process (the actual shell)
-        # The pty process spawns a shell, we want the shell's cwd
-        child_pid = self._get_child_pid(pid)
-        target_pid = child_pid if child_pid else pid
+        # Build list of candidate PIDs to try
+        # Start with the direct pid (terminado spawns shell as direct child)
+        candidates = [pid]
 
+        # Add all child processes
+        child_pids = self._get_all_child_pids(pid)
+        candidates.extend(child_pids)
+
+        # Try each candidate until we find a valid cwd
+        for target_pid in candidates:
+            cwd = self._try_get_cwd(target_pid)
+            if cwd:
+                return cwd
+
+        return None
+
+    def _try_get_cwd(self, pid: int) -> str | None:
+        """Try to get cwd for a specific process.
+
+        Args:
+            pid: Process ID
+
+        Returns:
+            The cwd path or None
+        """
         cwd = None
 
         if sys.platform == "linux":
             # Try /proc/pid/cwd first
-            cwd = self._get_cwd_linux(target_pid)
+            cwd = self._get_cwd_linux(pid)
 
             # Fallback to PWD from environment
             if cwd is None:
-                cwd = self._get_pwd_from_environ(target_pid)
+                cwd = self._get_pwd_from_environ(pid)
 
         elif sys.platform == "darwin":
-            cwd = self._get_cwd_macos(target_pid)
+            cwd = self._get_cwd_macos(pid)
         else:
             # Windows or other - try Linux methods
-            cwd = self._get_cwd_linux(target_pid)
+            cwd = self._get_cwd_linux(pid)
             if cwd is None:
-                cwd = self._get_pwd_from_environ(target_pid)
+                cwd = self._get_pwd_from_environ(pid)
 
         return cwd
 
-    def _get_child_pid(self, parent_pid: int) -> int | None:
-        """Get the first child process PID.
+    def _get_all_child_pids(self, parent_pid: int) -> list[int]:
+        """Get all child process PIDs, sorted by shell likelihood.
 
         Args:
             parent_pid: Parent process ID
 
         Returns:
-            Child PID or None
+            List of child PIDs, with known shells first
         """
+        child_pids = []
+        shell_pids = []
+        known_shells = {'bash', 'zsh', 'fish', 'sh', 'dash', 'ksh', 'tcsh', 'csh'}
+
         try:
             if sys.platform == "linux":
                 # Read children from /proc
@@ -129,24 +153,53 @@ class TerminalCwdHandler(APIHandler):
                 if os.path.exists(children_file):
                     with open(children_file, "r") as f:
                         children = f.read().strip().split()
-                        if children:
-                            return int(children[0])
+                        for child in children:
+                            try:
+                                pid = int(child)
+                                # Check if this is a known shell
+                                comm_file = f"/proc/{pid}/comm"
+                                if os.path.exists(comm_file):
+                                    with open(comm_file, "r") as cf:
+                                        comm = cf.read().strip()
+                                        if comm in known_shells:
+                                            shell_pids.append(pid)
+                                        else:
+                                            child_pids.append(pid)
+                                else:
+                                    child_pids.append(pid)
+                            except (ValueError, OSError):
+                                pass
 
             # Fallback: use pgrep
-            result = subprocess.run(
-                ["pgrep", "-P", str(parent_pid)],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                pids = result.stdout.strip().split("\n")
-                if pids:
-                    return int(pids[0])
+            if not child_pids and not shell_pids:
+                result = subprocess.run(
+                    ["pgrep", "-P", str(parent_pid)],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    for pid_str in result.stdout.strip().split("\n"):
+                        try:
+                            pid = int(pid_str)
+                            # Check if this is a known shell
+                            comm_file = f"/proc/{pid}/comm"
+                            if os.path.exists(comm_file):
+                                with open(comm_file, "r") as cf:
+                                    comm = cf.read().strip()
+                                    if comm in known_shells:
+                                        shell_pids.append(pid)
+                                    else:
+                                        child_pids.append(pid)
+                            else:
+                                child_pids.append(pid)
+                        except (ValueError, OSError):
+                            pass
         except Exception:
             pass
 
-        return None
+        # Return shells first, then other children
+        return shell_pids + child_pids
 
     def _get_cwd_linux(self, pid: int) -> str | None:
         """Get process cwd on Linux using /proc filesystem.
