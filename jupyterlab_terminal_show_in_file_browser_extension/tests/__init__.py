@@ -1,0 +1,1 @@
+# Tests for jupyterlab_terminal_show_in_file_browser_extension
