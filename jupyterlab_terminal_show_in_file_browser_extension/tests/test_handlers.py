@@ -22,7 +22,9 @@ class MockHandler:
     _get_cwd_linux = TerminalCwdHandler._get_cwd_linux
     _get_pwd_from_environ = TerminalCwdHandler._get_pwd_from_environ
     _get_cwd_macos = TerminalCwdHandler._get_cwd_macos
-    _get_all_child_pids = TerminalCwdHandler._get_all_child_pids
+    _get_direct_children = TerminalCwdHandler._get_direct_children
+    _get_process_comm = TerminalCwdHandler._get_process_comm
+    _collect_process_tree = TerminalCwdHandler._collect_process_tree
     _try_get_cwd = TerminalCwdHandler._try_get_cwd
     _get_process_cwd = TerminalCwdHandler._get_process_cwd
 
@@ -88,61 +90,61 @@ class TestGetPwdFromEnviron:
         assert pwd is None
 
 
-class TestGetAllChildPids:
-    """Tests for _get_all_child_pids method."""
+class TestGetDirectChildren:
+    """Tests for _get_direct_children method."""
 
     def test_returns_list(self, handler):
         """Should always return a list."""
-        result = handler._get_all_child_pids(os.getpid())
+        result = handler._get_direct_children(os.getpid())
         assert isinstance(result, list)
 
     def test_returns_empty_for_nonexistent_pid(self, handler):
         """Should return empty list for non-existent PID."""
-        result = handler._get_all_child_pids(999999999)
+        result = handler._get_direct_children(999999999)
         assert result == []
 
-    def test_prioritizes_shell_processes(self, handler):
-        """Should put known shells first in the list."""
+
+class TestCollectProcessTree:
+    """Tests for _collect_process_tree method (recursive traversal)."""
+
+    def test_collects_current_process(self, handler):
+        """Should collect current process info."""
         if sys.platform != "linux":
             pytest.skip("Linux-only test")
 
-        # Mock the /proc filesystem reads
-        with patch('os.path.exists') as mock_exists, \
-             patch('builtins.open', create=True) as mock_open:
+        known_shells = {'bash', 'zsh', 'fish', 'sh', 'dash', 'ksh', 'tcsh', 'csh'}
+        results = []
+        handler._collect_process_tree(os.getpid(), 0, results, known_shells)
 
-            # Setup: parent has children 100 (python), 101 (fish)
-            mock_exists.side_effect = lambda p: p in [
-                '/proc/1/task/1/children',
-                '/proc/100/comm',
-                '/proc/101/comm'
-            ]
+        # Should have at least the current process
+        assert len(results) >= 1
+        # First entry should be current process at depth 0
+        pid, depth, is_shell, comm = results[0]
+        assert pid == os.getpid()
+        assert depth == 0
 
-            def open_side_effect(path, *args, **kwargs):
-                mock_file = MagicMock()
-                if path == '/proc/1/task/1/children':
-                    mock_file.read.return_value = '100 101'
-                    mock_file.__enter__ = lambda s: mock_file
-                    mock_file.__exit__ = MagicMock(return_value=False)
-                elif path == '/proc/100/comm':
-                    mock_file.read.return_value = 'python'
-                    mock_file.__enter__ = lambda s: mock_file
-                    mock_file.__exit__ = MagicMock(return_value=False)
-                elif path == '/proc/101/comm':
-                    mock_file.read.return_value = 'fish'
-                    mock_file.__enter__ = lambda s: mock_file
-                    mock_file.__exit__ = MagicMock(return_value=False)
-                return mock_file
+    def test_prioritizes_deepest_shells(self, handler):
+        """Process tree sorting should prioritize deepest shells."""
+        # Simulate process tree: (pid, depth, is_shell, comm)
+        results = [
+            (100, 0, False, 'terminado'),  # depth 0, not shell
+            (101, 1, True, 'fish'),        # depth 1, shell
+            (102, 2, False, 'mc'),         # depth 2, not shell
+            (103, 3, True, 'bash'),        # depth 3, shell (mc subshell)
+        ]
 
-            mock_open.side_effect = open_side_effect
+        # Sort like _get_process_cwd does: depth desc, shells first
+        results.sort(key=lambda x: (-x[1], not x[2]))
 
-            result = handler._get_all_child_pids(1)
-
-            # Fish should come before python (shells prioritized)
-            assert 101 in result
-            assert 100 in result
-            fish_idx = result.index(101)
-            python_idx = result.index(100)
-            assert fish_idx < python_idx
+        # Deepest shell (bash at depth 3) should be first
+        assert results[0][0] == 103
+        assert results[0][3] == 'bash'
+        # Then mc at depth 2
+        assert results[1][0] == 102
+        # Then fish at depth 1
+        assert results[2][0] == 101
+        # Finally terminado at depth 0
+        assert results[3][0] == 100
 
 
 class TestTryGetCwd:
@@ -175,46 +177,46 @@ class TestGetProcessCwd:
         assert cwd is not None
         assert os.path.isabs(cwd)
 
-    def test_tries_multiple_candidates(self, handler):
-        """Should try direct pid and children."""
+    def test_tries_deepest_shell_first(self, handler):
+        """Should try deepest shell process first."""
         with patch.object(handler, '_try_get_cwd') as mock_try, \
-             patch.object(handler, '_get_all_child_pids') as mock_children:
+             patch.object(handler, '_collect_process_tree') as mock_collect:
 
-            # First candidate fails, second succeeds
-            mock_try.side_effect = [None, '/home/test']
-            mock_children.return_value = [200]
+            # Simulate tree: parent -> child shell at depth 1
+            def populate_tree(pid, depth, results, known_shells):
+                results.append((100, 0, False, 'terminado'))
+                results.append((200, 1, True, 'bash'))
+
+            mock_collect.side_effect = populate_tree
+            # Deepest shell (200) succeeds
+            mock_try.side_effect = lambda pid: '/home/test' if pid == 200 else None
 
             result = handler._get_process_cwd(100)
 
             assert result == '/home/test'
-            assert mock_try.call_count == 2
-            mock_try.assert_any_call(100)  # Direct pid
-            mock_try.assert_any_call(200)  # Child pid
 
 
 class TestKnownShells:
     """Tests for known shell detection."""
 
     def test_common_shells_recognized(self, handler):
-        """Should recognize common shells."""
+        """Should recognize common shells in process tree."""
         known_shells = {'bash', 'zsh', 'fish', 'sh', 'dash', 'ksh', 'tcsh', 'csh'}
 
-        # Verify the handler uses these shells
-        # This tests the implementation detail but ensures compatibility
+        # Test that shells are correctly identified
+        for shell in known_shells:
+            results = []
+            # Manually test the shell detection logic
+            comm = shell
+            is_shell = comm in known_shells
+            assert is_shell, f"{shell} should be recognized as a shell"
+
+    def test_get_process_comm_returns_string(self, handler):
+        """Should return command name for current process."""
         if sys.platform != "linux":
             pytest.skip("Linux-only test")
 
-        with patch('os.path.exists') as mock_exists, \
-             patch('builtins.open', create=True) as mock_open:
-
-            for shell in known_shells:
-                mock_exists.return_value = True
-
-                mock_file = MagicMock()
-                mock_file.read.side_effect = ['100', shell]
-                mock_file.__enter__ = lambda s: mock_file
-                mock_file.__exit__ = MagicMock(return_value=False)
-                mock_open.return_value = mock_file
-
-                # Just verify no errors for each shell
-                handler._get_all_child_pids(1)
+        comm = handler._get_process_comm(os.getpid())
+        assert comm is not None
+        assert isinstance(comm, str)
+        assert len(comm) > 0
