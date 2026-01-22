@@ -98,7 +98,10 @@ function toRelativePath(
   const normalizedCwd = absolutePath.replace(/\/+$/, '');
 
   // Expand tilde in serverRoot and normalize
-  let normalizedRoot = expandTilde(serverRoot, absolutePath).replace(/\/+$/, '');
+  const normalizedRoot = expandTilde(serverRoot, absolutePath).replace(
+    /\/+$/,
+    ''
+  );
 
   // Check if cwd is the server root
   if (normalizedCwd === normalizedRoot) {
