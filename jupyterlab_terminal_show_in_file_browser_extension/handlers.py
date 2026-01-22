@@ -77,10 +77,14 @@ class TerminalCwdHandler(APIHandler):
     def _get_process_cwd(self, pid: int) -> str | None:
         """Get the current working directory of a process.
 
-        Tries multiple methods and process candidates:
-        1. Try the direct pid first (terminado spawns shell directly)
-        2. Try child processes, preferring known shells
-        3. For each candidate, try /proc/cwd, PWD environ, or lsof
+        Traverses the entire process tree recursively to find the deepest
+        shell process. This handles cases like mc (Midnight Commander) which
+        spawns a subshell - we want the subshell's cwd, not the parent shell.
+
+        Priority order:
+        1. Deepest shell process in the tree (e.g., mc's subshell)
+        2. Any shell process found in the tree
+        3. Direct pty process as fallback
 
         Args:
             pid: Process ID
@@ -88,21 +92,120 @@ class TerminalCwdHandler(APIHandler):
         Returns:
             The cwd path or None if it couldn't be determined
         """
-        # Build list of candidate PIDs to try
-        # Start with the direct pid (terminado spawns shell as direct child)
-        candidates = [pid]
+        known_shells = {'bash', 'zsh', 'fish', 'sh', 'dash', 'ksh', 'tcsh', 'csh'}
 
-        # Add all child processes
-        child_pids = self._get_all_child_pids(pid)
-        candidates.extend(child_pids)
+        # Build complete process tree with depth information
+        # List of (pid, depth, is_shell, comm)
+        all_processes = []
+        self._collect_process_tree(pid, 0, all_processes, known_shells)
 
-        # Try each candidate until we find a valid cwd
-        for target_pid in candidates:
+        # Sort by depth descending, shells first at each depth
+        # This ensures we try the deepest shell first (mc's subshell)
+        all_processes.sort(key=lambda x: (-x[1], not x[2]))
+
+        # Try each process, deepest shells first
+        for target_pid, depth, is_shell, comm in all_processes:
             cwd = self._try_get_cwd(target_pid)
             if cwd:
                 return cwd
 
+        # Fallback: try the original pid directly
+        return self._try_get_cwd(pid)
+
+    def _collect_process_tree(
+        self,
+        pid: int,
+        depth: int,
+        results: list,
+        known_shells: set
+    ) -> None:
+        """Recursively collect all processes in the tree with depth info.
+
+        Args:
+            pid: Process ID to start from
+            depth: Current depth in the tree
+            results: List to append (pid, depth, is_shell, comm) tuples
+            known_shells: Set of known shell command names
+        """
+        # Get process command name
+        comm = self._get_process_comm(pid)
+        is_shell = comm in known_shells if comm else False
+
+        results.append((pid, depth, is_shell, comm))
+
+        # Get direct children and recurse
+        children = self._get_direct_children(pid)
+        for child_pid in children:
+            self._collect_process_tree(child_pid, depth + 1, results, known_shells)
+
+    def _get_process_comm(self, pid: int) -> str | None:
+        """Get the command name for a process.
+
+        Args:
+            pid: Process ID
+
+        Returns:
+            Command name or None
+        """
+        try:
+            if sys.platform == "linux":
+                comm_file = f"/proc/{pid}/comm"
+                if os.path.exists(comm_file):
+                    with open(comm_file, "r") as f:
+                        return f.read().strip()
+            else:
+                # macOS/other: use ps
+                result = subprocess.run(
+                    ["ps", "-p", str(pid), "-o", "comm="],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    # ps may return full path, extract basename
+                    return os.path.basename(result.stdout.strip())
+        except Exception:
+            pass
         return None
+
+    def _get_direct_children(self, parent_pid: int) -> list[int]:
+        """Get direct child PIDs of a process.
+
+        Args:
+            parent_pid: Parent process ID
+
+        Returns:
+            List of child PIDs
+        """
+        children = []
+        try:
+            if sys.platform == "linux":
+                children_file = f"/proc/{parent_pid}/task/{parent_pid}/children"
+                if os.path.exists(children_file):
+                    with open(children_file, "r") as f:
+                        for child in f.read().strip().split():
+                            try:
+                                children.append(int(child))
+                            except ValueError:
+                                pass
+
+            # Fallback: use pgrep
+            if not children:
+                result = subprocess.run(
+                    ["pgrep", "-P", str(parent_pid)],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    for pid_str in result.stdout.strip().split("\n"):
+                        try:
+                            children.append(int(pid_str))
+                        except ValueError:
+                            pass
+        except Exception:
+            pass
+        return children
 
     def _try_get_cwd(self, pid: int) -> str | None:
         """Try to get cwd for a specific process.
@@ -132,74 +235,6 @@ class TerminalCwdHandler(APIHandler):
                 cwd = self._get_pwd_from_environ(pid)
 
         return cwd
-
-    def _get_all_child_pids(self, parent_pid: int) -> list[int]:
-        """Get all child process PIDs, sorted by shell likelihood.
-
-        Args:
-            parent_pid: Parent process ID
-
-        Returns:
-            List of child PIDs, with known shells first
-        """
-        child_pids = []
-        shell_pids = []
-        known_shells = {'bash', 'zsh', 'fish', 'sh', 'dash', 'ksh', 'tcsh', 'csh'}
-
-        try:
-            if sys.platform == "linux":
-                # Read children from /proc
-                children_file = f"/proc/{parent_pid}/task/{parent_pid}/children"
-                if os.path.exists(children_file):
-                    with open(children_file, "r") as f:
-                        children = f.read().strip().split()
-                        for child in children:
-                            try:
-                                pid = int(child)
-                                # Check if this is a known shell
-                                comm_file = f"/proc/{pid}/comm"
-                                if os.path.exists(comm_file):
-                                    with open(comm_file, "r") as cf:
-                                        comm = cf.read().strip()
-                                        if comm in known_shells:
-                                            shell_pids.append(pid)
-                                        else:
-                                            child_pids.append(pid)
-                                else:
-                                    child_pids.append(pid)
-                            except (ValueError, OSError):
-                                pass
-
-            # Fallback: use pgrep
-            if not child_pids and not shell_pids:
-                result = subprocess.run(
-                    ["pgrep", "-P", str(parent_pid)],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    for pid_str in result.stdout.strip().split("\n"):
-                        try:
-                            pid = int(pid_str)
-                            # Check if this is a known shell
-                            comm_file = f"/proc/{pid}/comm"
-                            if os.path.exists(comm_file):
-                                with open(comm_file, "r") as cf:
-                                    comm = cf.read().strip()
-                                    if comm in known_shells:
-                                        shell_pids.append(pid)
-                                    else:
-                                        child_pids.append(pid)
-                            else:
-                                child_pids.append(pid)
-                        except (ValueError, OSError):
-                            pass
-        except Exception:
-            pass
-
-        # Return shells first, then other children
-        return shell_pids + child_pids
 
     def _get_cwd_linux(self, pid: int) -> str | None:
         """Get process cwd on Linux using /proc filesystem.
