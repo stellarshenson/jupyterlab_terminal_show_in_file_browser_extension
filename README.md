@@ -7,6 +7,9 @@
 [![JupyterLab 4](https://img.shields.io/badge/JupyterLab-4-orange.svg)](https://jupyterlab.readthedocs.io/en/stable/)
 [![Brought To You By KOLOMOLO](https://img.shields.io/badge/Brought%20To%20You%20By-KOLOMOLO-00ffff?style=flat)](https://kolomolo.com)
 
+> [!TIP]
+> This extension is part of the [stellars_jupyterlab_extensions](https://github.com/stellarshenson/stellars_jupyterlab_extensions) metapackage. Install all Stellars extensions at once: `pip install stellars_jupyterlab_extensions`
+
 Navigate the file browser to your terminal's current working directory with a single click. Right-click on any terminal tab and select "Show in File Browser" to instantly jump to the directory where your terminal session is working.
 
 **Full disclosure:** This extension does exactly one thing. It's not revolutionary, it won't change your life, and it definitely won't impress anyone at parties. But every time you `cd` somewhere and wonder "where am I again?" - it'll be there for you. Quietly. Unremarkably. Like a good friend who never asks for credit.
