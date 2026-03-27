@@ -77,14 +77,10 @@ class TerminalCwdHandler(APIHandler):
     def _get_process_cwd(self, pid: int) -> str | None:
         """Get the current working directory of a process.
 
-        Traverses the entire process tree recursively to find the deepest
-        shell process. This handles cases like mc (Midnight Commander) which
-        spawns a subshell - we want the subshell's cwd, not the parent shell.
-
-        Priority order:
-        1. Deepest shell process in the tree (e.g., mc's subshell)
-        2. Any shell process found in the tree
-        3. Direct pty process as fallback
+        Traverses the full process tree recursively, tries deepest shells
+        first, but validates that every candidate cwd is a real filesystem
+        directory (filters out pseudo-paths like /proc/*/fdinfo or /sys/*
+        that appear on Chrome and other sandboxed processes).
 
         Args:
             pid: Process ID
@@ -95,22 +91,39 @@ class TerminalCwdHandler(APIHandler):
         known_shells = {'bash', 'zsh', 'fish', 'sh', 'dash', 'ksh', 'tcsh', 'csh'}
 
         # Build complete process tree with depth information
-        # List of (pid, depth, is_shell, comm)
         all_processes = []
         self._collect_process_tree(pid, 0, all_processes, known_shells)
 
         # Sort by depth descending, shells first at each depth
-        # This ensures we try the deepest shell first (mc's subshell)
         all_processes.sort(key=lambda x: (-x[1], not x[2]))
 
-        # Try each process, deepest shells first
+        # Try each process, deepest shells first, but validate cwd
         for target_pid, depth, is_shell, comm in all_processes:
             cwd = self._try_get_cwd(target_pid)
-            if cwd:
+            if cwd and self._is_valid_cwd(cwd):
                 return cwd
 
         # Fallback: try the original pid directly
         return self._try_get_cwd(pid)
+
+    def _is_valid_cwd(self, path: str) -> bool:
+        """Check whether a cwd path is a real filesystem directory.
+
+        Filters out pseudo-filesystem paths (e.g. /proc/*/fdinfo,
+        /sys/*) that appear on sandboxed processes like Chrome.
+
+        Args:
+            path: Absolute path to validate
+
+        Returns:
+            True if the path is a usable real directory
+        """
+        if not path or not path.startswith('/'):
+            return False
+        # Reject kernel pseudo-filesystems
+        if path.startswith(('/proc/', '/sys/', '/dev/')):
+            return False
+        return os.path.isdir(path)
 
     def _collect_process_tree(
         self,

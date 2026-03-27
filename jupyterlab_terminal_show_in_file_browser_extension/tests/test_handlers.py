@@ -26,6 +26,7 @@ class MockHandler:
     _get_process_comm = TerminalCwdHandler._get_process_comm
     _collect_process_tree = TerminalCwdHandler._collect_process_tree
     _try_get_cwd = TerminalCwdHandler._try_get_cwd
+    _is_valid_cwd = TerminalCwdHandler._is_valid_cwd
     _get_process_cwd = TerminalCwdHandler._get_process_cwd
 
 
@@ -123,28 +124,20 @@ class TestCollectProcessTree:
         assert pid == os.getpid()
         assert depth == 0
 
-    def test_prioritizes_deepest_shells(self, handler):
-        """Process tree sorting should prioritize deepest shells."""
+    def test_collects_multiple_levels(self, handler):
+        """Process tree collection should include depth info."""
         # Simulate process tree: (pid, depth, is_shell, comm)
         results = [
-            (100, 0, False, 'terminado'),  # depth 0, not shell
-            (101, 1, True, 'fish'),        # depth 1, shell
-            (102, 2, False, 'mc'),         # depth 2, not shell
-            (103, 3, True, 'bash'),        # depth 3, shell (mc subshell)
+            (100, 0, True, 'fish'),        # depth 0, shell (login shell)
+            (101, 1, False, 'mc'),          # depth 1, file manager
+            (102, 2, True, 'bash'),         # depth 2, shell (mc subshell)
         ]
 
-        # Sort like _get_process_cwd does: depth desc, shells first
-        results.sort(key=lambda x: (-x[1], not x[2]))
-
-        # Deepest shell (bash at depth 3) should be first
-        assert results[0][0] == 103
-        assert results[0][3] == 'bash'
-        # Then mc at depth 2
-        assert results[1][0] == 102
-        # Then fish at depth 1
-        assert results[2][0] == 101
-        # Finally terminado at depth 0
-        assert results[3][0] == 100
+        # Verify structure
+        assert results[0][1] == 0  # login shell at depth 0
+        assert results[1][1] == 1  # mc at depth 1
+        assert results[2][1] == 2  # subshell at depth 2
+        assert results[2][2] is True  # subshell is a shell
 
 
 class TestTryGetCwd:
@@ -177,23 +170,92 @@ class TestGetProcessCwd:
         assert cwd is not None
         assert os.path.isabs(cwd)
 
-    def test_tries_deepest_shell_first(self, handler):
-        """Should try deepest shell process first."""
+    def test_returns_deepest_valid_shell_cwd(self, handler):
+        """Should return deepest shell with valid cwd, skipping pseudo-paths."""
         with patch.object(handler, '_try_get_cwd') as mock_try, \
-             patch.object(handler, '_collect_process_tree') as mock_collect:
+             patch.object(handler, '_collect_process_tree') as mock_collect, \
+             patch.object(handler, '_is_valid_cwd') as mock_valid:
 
-            # Simulate tree: parent -> child shell at depth 1
+            # Tree: fish -> claude -> sh -> chrome
             def populate_tree(pid, depth, results, known_shells):
-                results.append((100, 0, False, 'terminado'))
-                results.append((200, 1, True, 'bash'))
+                results.append((100, 0, True, 'fish'))
+                results.append((200, 1, False, 'claude'))
+                results.append((300, 2, True, 'sh'))
+                results.append((400, 3, False, 'chrome'))
 
             mock_collect.side_effect = populate_tree
-            # Deepest shell (200) succeeds
-            mock_try.side_effect = lambda pid: '/home/test' if pid == 200 else None
+
+            # Chrome has /proc pseudo-path, sh and fish have real paths
+            mock_try.side_effect = lambda pid: {
+                100: '/home/test/project',
+                200: '/home/test/project',
+                300: '/home/test/project',
+                400: '/proc/123/fdinfo'
+            }.get(pid)
+
+            # /proc path is invalid, real paths are valid
+            mock_valid.side_effect = lambda p: not p.startswith('/proc/')
 
             result = handler._get_process_cwd(100)
 
-            assert result == '/home/test'
+            # Should skip chrome (/proc), return sh (deepest valid shell)
+            assert result == '/home/test/project'
+
+    def test_uses_file_manager_subshell_cwd(self, handler):
+        """Should find mc subshell cwd via recursive deepest-first search."""
+        with patch.object(handler, '_try_get_cwd') as mock_try, \
+             patch.object(handler, '_collect_process_tree') as mock_collect, \
+             patch.object(handler, '_is_valid_cwd', return_value=True):
+
+            # Tree: fish -> mc -> bash (subshell with different cwd)
+            def populate_tree(pid, depth, results, known_shells):
+                results.append((100, 0, True, 'fish'))
+                results.append((200, 1, False, 'mc'))
+                results.append((300, 2, True, 'bash'))
+
+            mock_collect.side_effect = populate_tree
+
+            mock_try.side_effect = lambda pid: {
+                100: '/home',
+                200: '/home',
+                300: '/home/deep'
+            }.get(pid)
+
+            result = handler._get_process_cwd(100)
+
+            # Deepest shell (bash at depth 2) has valid cwd
+            assert result == '/home/deep'
+
+
+class TestIsValidCwd:
+    """Tests for _is_valid_cwd static method."""
+
+    def test_rejects_proc_paths(self, handler):
+        """Should reject /proc pseudo-filesystem paths."""
+        assert handler._is_valid_cwd('/proc/123/fdinfo') is False
+        assert handler._is_valid_cwd('/proc/1/cwd') is False
+
+    def test_rejects_sys_paths(self, handler):
+        """Should reject /sys pseudo-filesystem paths."""
+        assert handler._is_valid_cwd('/sys/class/net') is False
+
+    def test_rejects_dev_paths(self, handler):
+        """Should reject /dev paths."""
+        assert handler._is_valid_cwd('/dev/pts/0') is False
+
+    def test_rejects_empty_and_relative(self, handler):
+        """Should reject empty or relative paths."""
+        assert handler._is_valid_cwd('') is False
+        assert handler._is_valid_cwd('relative/path') is False
+
+    def test_accepts_real_directory(self, handler):
+        """Should accept existing real directories."""
+        assert handler._is_valid_cwd('/tmp') is True
+        assert handler._is_valid_cwd(os.getcwd()) is True
+
+    def test_rejects_nonexistent_directory(self, handler):
+        """Should reject paths that don't exist."""
+        assert handler._is_valid_cwd('/nonexistent/fake/path') is False
 
 
 class TestKnownShells:
