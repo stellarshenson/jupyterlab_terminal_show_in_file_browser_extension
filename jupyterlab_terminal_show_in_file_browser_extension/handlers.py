@@ -71,40 +71,70 @@ class TerminalCwdHandler(APIHandler):
             self.log.error(f"Error getting terminal cwd: {e}")
             self.set_status(500)
             self.finish(json.dumps({
-                "error": str(e)
+                "error": "Internal error determining terminal cwd"
             }))
 
     def _get_process_cwd(self, pid: int) -> str | None:
-        """Get the current working directory of a process.
+        """Get the current working directory for a terminal's shell process.
 
-        Traverses the full process tree recursively, tries deepest shells
-        first, but validates that every candidate cwd is a real filesystem
-        directory (filters out pseudo-paths like /proc/*/fdinfo or /sys/*
-        that appear on Chrome and other sandboxed processes).
+        Resolves the cwd via the pty's foreground process group (tpgid) - the
+        process currently in the foreground of the controlling terminal, which
+        is what the user is interacting with. Read from the pty shell's own
+        /proc/{pid}/stat, this signal:
+          - follows the active foreground program (e.g. mc, whose own process
+            tracks the current panel directory),
+          - excludes other terminals' sessions that a shared daemon may have
+            spawned into this process subtree - they live on a different pty and
+            can never be this terminal's foreground group.
+
+        Falls back to the pty process's own cwd. Pseudo-filesystem paths
+        (/proc, /sys, /dev) and non-directories are rejected via _is_valid_cwd.
 
         Args:
-            pid: Process ID
+            pid: The pty process ID
 
         Returns:
             The cwd path or None if it couldn't be determined
         """
-        known_shells = {'bash', 'zsh', 'fish', 'sh', 'dash', 'ksh', 'tcsh', 'csh'}
-
-        # Build complete process tree with depth information
-        all_processes = []
-        self._collect_process_tree(pid, 0, all_processes, known_shells)
-
-        # Sort by depth descending, shells first at each depth
-        all_processes.sort(key=lambda x: (-x[1], not x[2]))
-
-        # Try each process, deepest shells first, but validate cwd
-        for target_pid, depth, is_shell, comm in all_processes:
-            cwd = self._try_get_cwd(target_pid)
+        # Primary: the foreground process group of the controlling terminal.
+        tpgid = self._get_foreground_pgid(pid)
+        if tpgid and tpgid > 0:
+            cwd = self._try_get_cwd(tpgid)
             if cwd and self._is_valid_cwd(cwd):
                 return cwd
 
-        # Fallback: try the original pid directly
-        return self._try_get_cwd(pid)
+        # Fallback: the pty process's own cwd (the terminal's shell).
+        cwd = self._try_get_cwd(pid)
+        if cwd and self._is_valid_cwd(cwd):
+            return cwd
+
+        return None
+
+    def _get_foreground_pgid(self, pid: int) -> int | None:
+        """Get the foreground process group id of a process's controlling
+        terminal (Linux), from field 8 (tpgid) of /proc/{pid}/stat.
+
+        This is the process group currently in the foreground of the pty - the
+        program the user is interacting with.
+
+        Args:
+            pid: Process ID (the pty shell)
+
+        Returns:
+            The tpgid integer, or None if unavailable (e.g. non-Linux, or the
+            process has no controlling terminal)
+        """
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                data = f.read()
+            # Field 2 (comm) is wrapped in parentheses and may itself contain
+            # spaces or ')'; split the remainder after the final ')'. The
+            # tokens then begin at field 3 (state), so tpgid (field 8) is
+            # index 5.
+            fields = data[data.rindex(")") + 2:].split()
+            return int(fields[5])
+        except (OSError, ValueError, IndexError):
+            return None
 
     def _is_valid_cwd(self, path: str) -> bool:
         """Check whether a cwd path is a real filesystem directory.
@@ -125,101 +155,6 @@ class TerminalCwdHandler(APIHandler):
             return False
         return os.path.isdir(path)
 
-    def _collect_process_tree(
-        self,
-        pid: int,
-        depth: int,
-        results: list,
-        known_shells: set
-    ) -> None:
-        """Recursively collect all processes in the tree with depth info.
-
-        Args:
-            pid: Process ID to start from
-            depth: Current depth in the tree
-            results: List to append (pid, depth, is_shell, comm) tuples
-            known_shells: Set of known shell command names
-        """
-        # Get process command name
-        comm = self._get_process_comm(pid)
-        is_shell = comm in known_shells if comm else False
-
-        results.append((pid, depth, is_shell, comm))
-
-        # Get direct children and recurse
-        children = self._get_direct_children(pid)
-        for child_pid in children:
-            self._collect_process_tree(child_pid, depth + 1, results, known_shells)
-
-    def _get_process_comm(self, pid: int) -> str | None:
-        """Get the command name for a process.
-
-        Args:
-            pid: Process ID
-
-        Returns:
-            Command name or None
-        """
-        try:
-            if sys.platform == "linux":
-                comm_file = f"/proc/{pid}/comm"
-                if os.path.exists(comm_file):
-                    with open(comm_file, "r") as f:
-                        return f.read().strip()
-            else:
-                # macOS/other: use ps
-                result = subprocess.run(
-                    ["ps", "-p", str(pid), "-o", "comm="],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    # ps may return full path, extract basename
-                    return os.path.basename(result.stdout.strip())
-        except Exception:
-            pass
-        return None
-
-    def _get_direct_children(self, parent_pid: int) -> list[int]:
-        """Get direct child PIDs of a process.
-
-        Args:
-            parent_pid: Parent process ID
-
-        Returns:
-            List of child PIDs
-        """
-        children = []
-        try:
-            if sys.platform == "linux":
-                children_file = f"/proc/{parent_pid}/task/{parent_pid}/children"
-                if os.path.exists(children_file):
-                    with open(children_file, "r") as f:
-                        for child in f.read().strip().split():
-                            try:
-                                children.append(int(child))
-                            except ValueError:
-                                pass
-
-            # Fallback: use pgrep
-            if not children:
-                result = subprocess.run(
-                    ["pgrep", "-P", str(parent_pid)],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    for pid_str in result.stdout.strip().split("\n"):
-                        try:
-                            children.append(int(pid_str))
-                        except ValueError:
-                            pass
-        except Exception:
-            pass
-        return children
-
     def _try_get_cwd(self, pid: int) -> str | None:
         """Try to get cwd for a specific process.
 
@@ -229,25 +164,11 @@ class TerminalCwdHandler(APIHandler):
         Returns:
             The cwd path or None
         """
-        cwd = None
-
-        if sys.platform == "linux":
-            # Try /proc/pid/cwd first
-            cwd = self._get_cwd_linux(pid)
-
-            # Fallback to PWD from environment
-            if cwd is None:
-                cwd = self._get_pwd_from_environ(pid)
-
-        elif sys.platform == "darwin":
-            cwd = self._get_cwd_macos(pid)
-        else:
-            # Windows or other - try Linux methods
-            cwd = self._get_cwd_linux(pid)
-            if cwd is None:
-                cwd = self._get_pwd_from_environ(pid)
-
-        return cwd
+        if sys.platform == "darwin":
+            return self._get_cwd_macos(pid)
+        # Linux (and any other platform exposing /proc); returns None where
+        # /proc is absent.
+        return self._get_cwd_linux(pid)
 
     def _get_cwd_linux(self, pid: int) -> str | None:
         """Get process cwd on Linux using /proc filesystem.
@@ -262,28 +183,6 @@ class TerminalCwdHandler(APIHandler):
             cwd_link = f"/proc/{pid}/cwd"
             if os.path.exists(cwd_link):
                 return os.readlink(cwd_link)
-        except (OSError, PermissionError):
-            pass
-        return None
-
-    def _get_pwd_from_environ(self, pid: int) -> str | None:
-        """Get PWD environment variable from process environment.
-
-        Args:
-            pid: Process ID
-
-        Returns:
-            The PWD value or None
-        """
-        try:
-            environ_file = f"/proc/{pid}/environ"
-            if os.path.exists(environ_file):
-                with open(environ_file, "rb") as f:
-                    environ_data = f.read()
-                    # Environment variables are null-separated
-                    for entry in environ_data.split(b"\x00"):
-                        if entry.startswith(b"PWD="):
-                            return entry[4:].decode("utf-8", errors="replace")
         except (OSError, PermissionError):
             pass
         return None

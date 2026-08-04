@@ -20,11 +20,8 @@ class MockHandler:
 
     # Copy methods from TerminalCwdHandler for testing
     _get_cwd_linux = TerminalCwdHandler._get_cwd_linux
-    _get_pwd_from_environ = TerminalCwdHandler._get_pwd_from_environ
     _get_cwd_macos = TerminalCwdHandler._get_cwd_macos
-    _get_direct_children = TerminalCwdHandler._get_direct_children
-    _get_process_comm = TerminalCwdHandler._get_process_comm
-    _collect_process_tree = TerminalCwdHandler._collect_process_tree
+    _get_foreground_pgid = TerminalCwdHandler._get_foreground_pgid
     _try_get_cwd = TerminalCwdHandler._try_get_cwd
     _is_valid_cwd = TerminalCwdHandler._is_valid_cwd
     _get_process_cwd = TerminalCwdHandler._get_process_cwd
@@ -68,76 +65,33 @@ class TestGetCwdLinux:
         assert cwd is None or isinstance(cwd, str)
 
 
-class TestGetPwdFromEnviron:
-    """Tests for _get_pwd_from_environ method."""
+class TestGetForegroundPgid:
+    """Tests for _get_foreground_pgid method (tpgid, field 8 of /proc/pid/stat)."""
 
-    def test_returns_pwd_for_current_process(self, handler):
-        """Should return PWD from current process environment."""
+    def test_returns_int_for_current_process(self, handler):
+        """Should return an integer tpgid for the current process."""
         if sys.platform != "linux":
             pytest.skip("Linux-only test")
 
-        pid = os.getpid()
-        pwd = handler._get_pwd_from_environ(pid)
-        # PWD should match current directory or be None if not set
-        if pwd:
-            assert os.path.isabs(pwd)
+        tpgid = handler._get_foreground_pgid(os.getpid())
+        assert isinstance(tpgid, int)
 
     def test_returns_none_for_nonexistent_pid(self, handler):
         """Should return None for a non-existent PID."""
-        if sys.platform != "linux":
-            pytest.skip("Linux-only test")
+        assert handler._get_foreground_pgid(999999999) is None
 
-        pwd = handler._get_pwd_from_environ(999999999)
-        assert pwd is None
+    def test_parses_comm_with_spaces_and_parens(self, handler):
+        """tpgid must parse correctly even when comm contains spaces or ')'.
 
-
-class TestGetDirectChildren:
-    """Tests for _get_direct_children method."""
-
-    def test_returns_list(self, handler):
-        """Should always return a list."""
-        result = handler._get_direct_children(os.getpid())
-        assert isinstance(result, list)
-
-    def test_returns_empty_for_nonexistent_pid(self, handler):
-        """Should return empty list for non-existent PID."""
-        result = handler._get_direct_children(999999999)
-        assert result == []
-
-
-class TestCollectProcessTree:
-    """Tests for _collect_process_tree method (recursive traversal)."""
-
-    def test_collects_current_process(self, handler):
-        """Should collect current process info."""
-        if sys.platform != "linux":
-            pytest.skip("Linux-only test")
-
-        known_shells = {'bash', 'zsh', 'fish', 'sh', 'dash', 'ksh', 'tcsh', 'csh'}
-        results = []
-        handler._collect_process_tree(os.getpid(), 0, results, known_shells)
-
-        # Should have at least the current process
-        assert len(results) >= 1
-        # First entry should be current process at depth 0
-        pid, depth, is_shell, comm = results[0]
-        assert pid == os.getpid()
-        assert depth == 0
-
-    def test_collects_multiple_levels(self, handler):
-        """Process tree collection should include depth info."""
-        # Simulate process tree: (pid, depth, is_shell, comm)
-        results = [
-            (100, 0, True, 'fish'),        # depth 0, shell (login shell)
-            (101, 1, False, 'mc'),          # depth 1, file manager
-            (102, 2, True, 'bash'),         # depth 2, shell (mc subshell)
-        ]
-
-        # Verify structure
-        assert results[0][1] == 0  # login shell at depth 0
-        assert results[1][1] == 1  # mc at depth 1
-        assert results[2][1] == 2  # subshell at depth 2
-        assert results[2][2] is True  # subshell is a shell
+        The stat line is split after the FINAL ')', so a process command name
+        like 'node (v20)' or 'foo) (bar' must not throw off the field offset.
+        """
+        # pid (comm) state ppid pgrp session tty_nr tpgid ...
+        #  1   2      3     4    5     6       7      8
+        line = "100 (node (v20)) S 1 100 100 34816 2688654 rest ignored\n"
+        with patch("builtins.open") as mock_open:
+            mock_open.return_value.__enter__.return_value.read.return_value = line
+            assert handler._get_foreground_pgid(100) == 2688654
 
 
 class TestTryGetCwd:
@@ -159,7 +113,7 @@ class TestTryGetCwd:
 
 
 class TestGetProcessCwd:
-    """Tests for _get_process_cwd method."""
+    """Tests for _get_process_cwd method (tpgid-based resolution)."""
 
     def test_returns_cwd_for_current_process(self, handler):
         """Should return cwd for current process."""
@@ -170,65 +124,107 @@ class TestGetProcessCwd:
         assert cwd is not None
         assert os.path.isabs(cwd)
 
-    def test_returns_deepest_valid_shell_cwd(self, handler):
-        """Should return deepest shell with valid cwd, skipping pseudo-paths."""
-        with patch.object(handler, '_try_get_cwd') as mock_try, \
-             patch.object(handler, '_collect_process_tree') as mock_collect, \
-             patch.object(handler, '_is_valid_cwd') as mock_valid:
-
-            # Tree: fish -> claude -> sh -> chrome
-            def populate_tree(pid, depth, results, known_shells):
-                results.append((100, 0, True, 'fish'))
-                results.append((200, 1, False, 'claude'))
-                results.append((300, 2, True, 'sh'))
-                results.append((400, 3, False, 'chrome'))
-
-            mock_collect.side_effect = populate_tree
-
-            # Chrome has /proc pseudo-path, sh and fish have real paths
-            mock_try.side_effect = lambda pid: {
-                100: '/home/test/project',
-                200: '/home/test/project',
-                300: '/home/test/project',
-                400: '/proc/123/fdinfo'
-            }.get(pid)
-
-            # /proc path is invalid, real paths are valid
-            mock_valid.side_effect = lambda p: not p.startswith('/proc/')
-
-            result = handler._get_process_cwd(100)
-
-            # Should skip chrome (/proc), return sh (deepest valid shell)
-            assert result == '/home/test/project'
-
-    def test_uses_file_manager_subshell_cwd(self, handler):
-        """Should find mc subshell cwd via recursive deepest-first search."""
-        with patch.object(handler, '_try_get_cwd') as mock_try, \
-             patch.object(handler, '_collect_process_tree') as mock_collect, \
+    def test_resolves_via_foreground_process_group(self, handler):
+        """Should return the cwd of the pty's foreground process group leader,
+        not the pty pid's own cwd."""
+        with patch.object(handler, '_get_foreground_pgid', return_value=555), \
+             patch.object(handler, '_try_get_cwd') as mock_try, \
              patch.object(handler, '_is_valid_cwd', return_value=True):
 
-            # Tree: fish -> mc -> bash (subshell with different cwd)
-            def populate_tree(pid, depth, results, known_shells):
-                results.append((100, 0, True, 'fish'))
-                results.append((200, 1, False, 'mc'))
-                results.append((300, 2, True, 'bash'))
-
-            mock_collect.side_effect = populate_tree
-
             mock_try.side_effect = lambda pid: {
-                100: '/home',
-                200: '/home',
-                300: '/home/deep'
+                555: '/home/lab/workspace/pmrcorporate/pmr-sales-support',
+                100: '/home/lab',  # pty pid - must NOT be used while tpgid valid
             }.get(pid)
 
             result = handler._get_process_cwd(100)
 
-            # Deepest shell (bash at depth 2) has valid cwd
+            assert result == '/home/lab/workspace/pmrcorporate/pmr-sales-support'
+
+    def test_ignores_foreign_session(self, handler):
+        """Reproduces the reported bug: a shared claude-code daemon grafted a
+        DIFFERENT project's shell into this terminal's process subtree, and the
+        old tree-walk resolved that foreign cwd.
+
+        With tpgid we only read this pty's foreground process group, which can
+        never be a foreign session on another TTY - so the foreign cwd is never
+        consulted. Here the foreground group leader is in the correct project.
+        """
+        with patch.object(handler, '_get_foreground_pgid', return_value=200), \
+             patch.object(handler, '_try_get_cwd') as mock_try, \
+             patch.object(handler, '_is_valid_cwd', return_value=True):
+
+            # 200 = this pty's foreground group (correct project). A foreign
+            # session (pid 900, kolomolo) is simply never read by tpgid.
+            mock_try.side_effect = lambda pid: {
+                200: '/home/lab/workspace/pmrcorporate/pmr-sales-support',
+                900: '/home/lab/workspace/kolomolo/sales/proposals',
+            }.get(pid)
+
+            result = handler._get_process_cwd(100)
+
+            assert result == '/home/lab/workspace/pmrcorporate/pmr-sales-support'
+
+    def test_follows_navigating_foreground_program(self, handler):
+        """mc-style navigation: the foreground process group leader (mc itself)
+        tracks the current directory, so its cwd - not the idle pty login
+        shell's - must be returned (entry-10 behaviour kept)."""
+        with patch.object(handler, '_get_foreground_pgid', return_value=300), \
+             patch.object(handler, '_try_get_cwd') as mock_try, \
+             patch.object(handler, '_is_valid_cwd', return_value=True):
+
+            mock_try.side_effect = lambda pid: {
+                300: '/home/deep',  # foreground program (e.g. mc), navigated dir
+                100: '/home',       # pty login shell, unchanged
+            }.get(pid)
+
+            result = handler._get_process_cwd(100)
+
             assert result == '/home/deep'
+
+    def test_falls_back_to_pty_pid_when_no_foreground(self, handler):
+        """When there is no foreground group, use the pty process's own cwd."""
+        with patch.object(handler, '_get_foreground_pgid', return_value=None), \
+             patch.object(handler, '_try_get_cwd') as mock_try, \
+             patch.object(handler, '_is_valid_cwd', return_value=True):
+
+            mock_try.side_effect = lambda pid: {100: '/home/project'}.get(pid)
+
+            result = handler._get_process_cwd(100)
+
+            assert result == '/home/project'
+
+    def test_falls_back_when_foreground_cwd_invalid(self, handler):
+        """A foreground cwd that fails validation (pseudo-path) must be skipped
+        in favour of the validated pty-pid fallback."""
+        with patch.object(handler, '_get_foreground_pgid', return_value=300), \
+             patch.object(handler, '_try_get_cwd') as mock_try, \
+             patch.object(handler, '_is_valid_cwd',
+                          side_effect=lambda p: not p.startswith('/proc/')):
+
+            mock_try.side_effect = lambda pid: {
+                300: '/proc/300/fdinfo',  # invalid
+                100: '/home/project',     # valid fallback
+            }.get(pid)
+
+            result = handler._get_process_cwd(100)
+
+            assert result == '/home/project'
+
+    def test_fallback_validates_cwd(self, handler):
+        """The fallback path must also reject pseudo-paths, returning None
+        rather than a bogus directory."""
+        with patch.object(handler, '_get_foreground_pgid', return_value=None), \
+             patch.object(handler, '_try_get_cwd', return_value='/proc/1/fdinfo'), \
+             patch.object(handler, '_is_valid_cwd',
+                          side_effect=lambda p: not p.startswith('/proc/')):
+
+            result = handler._get_process_cwd(100)
+
+            assert result is None
 
 
 class TestIsValidCwd:
-    """Tests for _is_valid_cwd static method."""
+    """Tests for _is_valid_cwd method."""
 
     def test_rejects_proc_paths(self, handler):
         """Should reject /proc pseudo-filesystem paths."""
@@ -256,29 +252,3 @@ class TestIsValidCwd:
     def test_rejects_nonexistent_directory(self, handler):
         """Should reject paths that don't exist."""
         assert handler._is_valid_cwd('/nonexistent/fake/path') is False
-
-
-class TestKnownShells:
-    """Tests for known shell detection."""
-
-    def test_common_shells_recognized(self, handler):
-        """Should recognize common shells in process tree."""
-        known_shells = {'bash', 'zsh', 'fish', 'sh', 'dash', 'ksh', 'tcsh', 'csh'}
-
-        # Test that shells are correctly identified
-        for shell in known_shells:
-            results = []
-            # Manually test the shell detection logic
-            comm = shell
-            is_shell = comm in known_shells
-            assert is_shell, f"{shell} should be recognized as a shell"
-
-    def test_get_process_comm_returns_string(self, handler):
-        """Should return command name for current process."""
-        if sys.platform != "linux":
-            pytest.skip("Linux-only test")
-
-        comm = handler._get_process_comm(os.getpid())
-        assert comm is not None
-        assert isinstance(comm, str)
-        assert len(comm) > 0
