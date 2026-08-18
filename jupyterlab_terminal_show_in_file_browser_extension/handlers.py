@@ -108,6 +108,55 @@ class TerminalCwdHandler(APIHandler):
         if cwd and self._is_valid_cwd(cwd):
             return cwd
 
+        # Last resort: the shell's directory has been deleted. /proc/{pid}/cwd
+        # then reads as '<path> (deleted)' and no longer exists, so both
+        # attempts above failed. Degrade to the nearest existing ancestor of
+        # the shell's last directory rather than failing outright.
+        recovered = self._get_recovered_cwd(pid)
+        if recovered:
+            return recovered
+
+        return None
+
+    def _get_recovered_cwd(self, pid: int) -> str | None:
+        """Recover a usable directory when a process's cwd has been deleted.
+
+        A shell sitting in a directory that is later removed keeps
+        /proc/{pid}/cwd readable as the old path with a ' (deleted)' suffix,
+        even though the directory is gone. Read that raw link (which, unlike
+        _try_get_cwd, does not require the target to exist) and walk up to the
+        nearest ancestor that still exists.
+
+        Args:
+            pid: Process ID (the pty shell)
+
+        Returns:
+            The nearest existing ancestor directory, or None (e.g. non-Linux)
+        """
+        try:
+            raw = os.readlink(f"/proc/{pid}/cwd")
+        except OSError:
+            return None
+        return self._nearest_existing_dir(raw)
+
+    def _nearest_existing_dir(self, path: str) -> str | None:
+        """Walk up to the nearest existing ancestor of a possibly-deleted path.
+
+        Args:
+            path: A cwd path that may carry a ' (deleted)' suffix or be gone
+
+        Returns:
+            The nearest existing ancestor directory, or None
+        """
+        if not path or not path.startswith('/'):
+            return None
+        suffix = " (deleted)"
+        if path.endswith(suffix):
+            path = path[:-len(suffix)]
+        while path and path != '/':
+            if self._is_valid_cwd(path):
+                return path
+            path = os.path.dirname(path)
         return None
 
     def _get_foreground_pgid(self, pid: int) -> int | None:

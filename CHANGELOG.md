@@ -2,6 +2,11 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## 1.0.26
+
+- Fixed "CWD Not Available" for a terminal whose shell is sitting in a directory that has since been deleted - the file browser now opens the nearest existing parent directory instead of showing an error
+- The terminal's working directory is read from `/proc` even when the directory was removed, then resolved up to the closest folder that still exists
+
 ## 1.0.25
 
 - Fixed "Show in File Browser" resolving to the wrong directory when an agent CLI (e.g. claude) runs inside the terminal - a shared background daemon could graft another terminal's session into the process tree, and the old deepest-shell search returned that other project's directory

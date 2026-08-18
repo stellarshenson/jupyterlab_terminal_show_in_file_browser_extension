@@ -24,6 +24,8 @@ class MockHandler:
     _get_foreground_pgid = TerminalCwdHandler._get_foreground_pgid
     _try_get_cwd = TerminalCwdHandler._try_get_cwd
     _is_valid_cwd = TerminalCwdHandler._is_valid_cwd
+    _get_recovered_cwd = TerminalCwdHandler._get_recovered_cwd
+    _nearest_existing_dir = TerminalCwdHandler._nearest_existing_dir
     _get_process_cwd = TerminalCwdHandler._get_process_cwd
 
 
@@ -215,12 +217,52 @@ class TestGetProcessCwd:
         rather than a bogus directory."""
         with patch.object(handler, '_get_foreground_pgid', return_value=None), \
              patch.object(handler, '_try_get_cwd', return_value='/proc/1/fdinfo'), \
+             patch.object(handler, '_get_recovered_cwd', return_value=None), \
              patch.object(handler, '_is_valid_cwd',
                           side_effect=lambda p: not p.startswith('/proc/')):
 
             result = handler._get_process_cwd(100)
 
             assert result is None
+
+    def test_recovers_ancestor_when_cwd_deleted(self, handler):
+        """When the shell's directory has been deleted (both tpgid and pty-pid
+        cwds gone), degrade to the nearest existing ancestor rather than fail.
+
+        Reproduces the reported 'CWD Not Available': a terminal whose fish
+        login shell sits in a since-deleted directory.
+        """
+        with patch.object(handler, '_get_foreground_pgid', return_value=None), \
+             patch.object(handler, '_try_get_cwd', return_value=None), \
+             patch.object(handler, '_get_recovered_cwd',
+                          return_value='/home/lab/workspace/private/henryk/court-cases'):
+
+            result = handler._get_process_cwd(100)
+
+            assert result == '/home/lab/workspace/private/henryk/court-cases'
+
+
+class TestNearestExistingDir:
+    """Tests for _nearest_existing_dir method (deleted-cwd recovery)."""
+
+    def test_strips_deleted_suffix_and_walks_up(self, handler):
+        """A '<path> (deleted)' cwd should resolve to the nearest ancestor
+        that still exists."""
+        gone = '/tmp/nonexistent-parent-xyz/gone-child (deleted)'
+        assert handler._nearest_existing_dir(gone) == '/tmp'
+
+    def test_returns_existing_dir_unchanged(self, handler):
+        """An existing directory should be returned as-is."""
+        assert handler._nearest_existing_dir('/tmp') == '/tmp'
+
+    def test_returns_none_for_relative_or_empty(self, handler):
+        """Reject non-absolute or empty input."""
+        assert handler._nearest_existing_dir('') is None
+        assert handler._nearest_existing_dir('relative/path') is None
+
+    def test_returns_none_when_no_ancestor_exists(self, handler):
+        """A path with no existing ancestor (below root) yields None."""
+        assert handler._nearest_existing_dir('/nonexistent-root-xyz/a/b') is None
 
 
 class TestIsValidCwd:
