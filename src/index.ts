@@ -7,6 +7,7 @@ import { ITerminalTracker } from '@jupyterlab/terminal';
 import { showErrorMessage } from '@jupyterlab/apputils';
 import { ServerConnection } from '@jupyterlab/services';
 import { URLExt, PageConfig } from '@jupyterlab/coreutils';
+import { ITranslator, nullTranslator } from '@jupyterlab/translation';
 
 /**
  * The command ID for showing terminal cwd in file browser.
@@ -127,16 +128,21 @@ const plugin: JupyterFrontEndPlugin<void> = {
     'JupyterLab extension to add context menu item to the terminal tab to navigate file browser to the pwd path of the terminal',
   autoStart: true,
   requires: [IDefaultFileBrowser, ITerminalTracker],
+  optional: [ITranslator],
   activate: (
     app: JupyterFrontEnd,
     fileBrowser: IDefaultFileBrowser,
-    terminalTracker: ITerminalTracker
+    terminalTracker: ITerminalTracker,
+    translator: ITranslator | null
   ) => {
     console.log(
       'JupyterLab extension jupyterlab_terminal_show_in_file_browser_extension is activated!'
     );
 
     const { commands } = app;
+    const trans = (translator ?? nullTranslator).load(
+      'jupyterlab_terminal_show_in_file_browser_extension'
+    );
 
     // Get the server root directory from PageConfig
     // This is the notebook_dir where Jupyter server was started
@@ -165,8 +171,9 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
     // Add the command
     commands.addCommand(COMMAND_ID, {
-      label: 'Show in File Browser',
-      caption: 'Navigate file browser to terminal current directory',
+      label: trans.__('Show in File Browser'),
+      caption: trans.__('Navigate file browser to terminal current directory'),
+      describedBy: { args: { type: 'object', properties: {} } },
       isVisible: openedOnTerminal,
       isEnabled: () => {
         const widget = terminalTracker.currentWidget;

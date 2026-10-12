@@ -4,3 +4,5 @@ node_modules
 **/package.json
 !/package.json
 jupyterlab_terminal_show_in_file_browser_extension
+eslint.config.mjs
+.venv

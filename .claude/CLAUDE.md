@@ -34,7 +34,7 @@ selecting it navigates the file browser to the terminal's current working direct
 
 **Toolchain**:
 
-- Build, install, test, and publish are Makefile-driven (`make build`, `make install`, `make test`, `make publish`) - Makefile v1.34, jlpm-based, project-local `.nodeenv/`
+- Build, install, test, and publish are Makefile-driven (`make build`, `make install`, `make test`, `make publish`) - Makefile v1.45, jlpm-based, project-local `.nodeenv/`
 - Tests - jest frontend (`jlpm test`), pytest server (`tests/test_handlers.py`), Playwright `ui-tests/`
 - CI/CD - GitHub Actions plus jupyter-releaser; follow the `jupyterlab-extension` skill
 

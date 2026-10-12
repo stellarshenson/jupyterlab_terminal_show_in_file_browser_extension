@@ -26,7 +26,7 @@ Navigate the file browser to your terminal's current working directory with a si
 
 ## Installation
 
-Requires JupyterLab 4.0.0 or higher.
+Requires JupyterLab 4.6 or later.
 
 ```bash
 pip install jupyterlab_terminal_show_in_file_browser_extension
