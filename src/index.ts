@@ -143,10 +143,31 @@ const plugin: JupyterFrontEndPlugin<void> = {
     const serverRoot = PageConfig.getOption('serverRoot');
     // console.log(`Server root: ${serverRoot}`);
 
+    // The tab selector in schema/plugin.json matches every main-area tab, and
+    // a tab carries no mark of its widget's kind. Whether the context menu was
+    // opened on a terminal - on its tab or inside it - is decided here: a tab
+    // holds its widget's id in data-id. On any other tab the item is hidden,
+    // so a document tab keeps JupyterLab's own "Show in File Browser" alone.
+    const openedOnTerminal = (): boolean => {
+      const node = app.contextMenuHitTest(
+        node =>
+          node.classList.contains('lm-TabBar-tab') ||
+          node.classList.contains('jp-Terminal')
+      );
+      return (
+        node !== undefined &&
+        terminalTracker.find(
+          widget =>
+            widget.id === node.dataset.id || widget.content.node === node
+        ) !== undefined
+      );
+    };
+
     // Add the command
     commands.addCommand(COMMAND_ID, {
       label: 'Show in File Browser',
       caption: 'Navigate file browser to terminal current directory',
+      isVisible: openedOnTerminal,
       isEnabled: () => {
         const widget = terminalTracker.currentWidget;
         return widget !== null;
