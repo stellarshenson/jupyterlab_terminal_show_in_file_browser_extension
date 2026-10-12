@@ -2,6 +2,23 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## [1.0.27] - 2026-10-12
+
+### Added
+
+- Galata integration tests for the menu item: hidden on a document tab, shown on a terminal tab where it opens the terminal's folder, shown inside a terminal
+
+### Changed
+
+- Updated to JupyterLab extension template 4.6.5: the extension builds with `@jupyter/builder` (Rspack) instead of the webpack-based builder, and lints with ESLint 9
+- Requires JupyterLab 4.6 or later and Python 3.10 or later. Dependency floors are raised to the tested versions, and every CI job runs on Python 3.13
+- Build tooling updated to Makefile 1.45: packages install with `jlpm` only, `package-lock.json` is removed, and `make publish` runs the tests before it releases
+- The command's label and caption go through JupyterLab's translator, so a language pack can translate them. This adds `@jupyterlab/translation` as a dependency
+
+### Fixed
+
+- "Show in File Browser" of this extension appears only on terminal tabs and inside terminals. Before, it also appeared on every document tab beside JupyterLab's own item with the same label, and there it moved the file browser to the folder of the terminal used last instead of the file
+
 ## 1.0.26
 
 - Fixed "CWD Not Available" for a terminal whose shell is sitting in a directory that has since been deleted - the file browser now opens the nearest existing parent directory instead of showing an error
