@@ -1,6 +1,6 @@
 {
     "name": "@stellarshenson/jupyterlab-terminal-show-in-file-browser-extension",
-    "version": "1.0.30",
+    "version": "1.0.31",
     "description": "Jupyterlab extension to add context menu item to the terminal tab to navigate file browser to the pwd path of the terminal",
     "keywords": [
         "jupyter",
