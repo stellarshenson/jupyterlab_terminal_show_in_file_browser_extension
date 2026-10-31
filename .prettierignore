@@ -6,3 +6,5 @@ node_modules
 jupyterlab_terminal_show_in_file_browser_extension
 eslint.config.mjs
 .venv
+.claude
+.agents
