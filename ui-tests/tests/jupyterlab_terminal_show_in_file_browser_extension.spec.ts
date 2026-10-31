@@ -19,7 +19,7 @@ test('should emit an activation console message', async ({ page }) => {
     logs.filter(
       s =>
         s ===
-        'JupyterLab extension jupyterlab_terminal_show_in_file_browser_extension is activated!'
+        'JupyterLab extension @stellarshenson/jupyterlab-terminal-show-in-file-browser-extension is activated!'
     )
   ).toHaveLength(1);
 });

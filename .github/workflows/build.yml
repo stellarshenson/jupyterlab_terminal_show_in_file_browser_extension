@@ -53,7 +53,7 @@ jobs:
         jupyter server extension list 2>&1 | grep -ie "jupyterlab_terminal_show_in_file_browser_extension.*OK"
 
         jupyter labextension list
-        jupyter labextension list 2>&1 | grep -ie "jupyterlab_terminal_show_in_file_browser_extension.*OK"
+        jupyter labextension list 2>&1 | grep -ie "@stellarshenson/jupyterlab-terminal-show-in-file-browser-extension.*OK"
         python -m jupyterlab.browser_check
 
     - name: Package the extension
@@ -98,7 +98,7 @@ jobs:
         jupyter server extension list 2>&1 | grep -ie "jupyterlab_terminal_show_in_file_browser_extension.*OK"
 
         jupyter labextension list
-        jupyter labextension list 2>&1 | grep -ie "jupyterlab_terminal_show_in_file_browser_extension.*OK"
+        jupyter labextension list 2>&1 | grep -ie "@stellarshenson/jupyterlab-terminal-show-in-file-browser-extension.*OK"
         python -m jupyterlab.browser_check --no-browser-test
 
   integration-tests:

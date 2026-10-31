@@ -1,7 +1,7 @@
 {
-  "name": "jupyterlab_terminal_show_in_file_browser_extension-ui-tests",
+  "name": "@stellarshenson/jupyterlab-terminal-show-in-file-browser-extension-ui-tests",
   "version": "1.0.0",
-  "description": "JupyterLab jupyterlab_terminal_show_in_file_browser_extension Integration Tests",
+  "description": "JupyterLab @stellarshenson/jupyterlab-terminal-show-in-file-browser-extension Integration Tests",
   "private": true,
   "scripts": {
     "start": "jupyter lab --config jupyter_server_test_config.py",

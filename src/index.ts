@@ -120,10 +120,10 @@ function toRelativePath(
 }
 
 /**
- * Initialization data for the jupyterlab_terminal_show_in_file_browser_extension extension.
+ * Initialization data for the @stellarshenson/jupyterlab-terminal-show-in-file-browser-extension extension.
  */
 const plugin: JupyterFrontEndPlugin<void> = {
-  id: 'jupyterlab_terminal_show_in_file_browser_extension:plugin',
+  id: '@stellarshenson/jupyterlab-terminal-show-in-file-browser-extension:plugin',
   description:
     'JupyterLab extension to add context menu item to the terminal tab to navigate file browser to the pwd path of the terminal',
   autoStart: true,
@@ -136,7 +136,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
     translator: ITranslator | null
   ) => {
     console.log(
-      'JupyterLab extension jupyterlab_terminal_show_in_file_browser_extension is activated!'
+      'JupyterLab extension @stellarshenson/jupyterlab-terminal-show-in-file-browser-extension is activated!'
     );
 
     const { commands } = app;
