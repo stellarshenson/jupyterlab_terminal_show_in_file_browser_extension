@@ -105,6 +105,16 @@
         "access": "public"
     },
     "jupyterlab": {
+        "discovery": {
+            "server": {
+                "managers": [
+                    "pip"
+                ],
+                "base": {
+                    "name": "jupyterlab_terminal_show_in_file_browser_extension"
+                }
+            }
+        },
         "extension": true,
         "outputDir": "jupyterlab_terminal_show_in_file_browser_extension/labextension",
         "schemaDir": "schema"
