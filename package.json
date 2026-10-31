@@ -1,6 +1,6 @@
 {
     "name": "@stellarshenson/jupyterlab-terminal-show-in-file-browser-extension",
-    "version": "1.0.29",
+    "version": "1.0.30",
     "description": "Jupyterlab extension to add context menu item to the terminal tab to navigate file browser to the pwd path of the terminal",
     "keywords": [
         "jupyter",
@@ -19,7 +19,8 @@
     "files": [
         "lib/**/*.{d.ts,eot,gif,html,jpg,js,js.map,json,png,svg,woff2,ttf}",
         "style/**/*.{css,js,eot,gif,html,jpg,json,png,svg,woff2,ttf}",
-        "src/**/*.{ts,tsx}"
+        "src/**/*.{ts,tsx}",
+        "schema/*.json"
     ],
     "main": "lib/index.js",
     "types": "lib/index.d.ts",
@@ -78,6 +79,7 @@
         "eslint-plugin-prettier": "^5.5.0",
         "globals": "^15.15.0",
         "jest": "^29.7.0",
+        "mkdirp": "^1.0.3",
         "npm-run-all2": "^7.0.1",
         "prettier": "^3.9.0",
         "rimraf": "^5.0.10",

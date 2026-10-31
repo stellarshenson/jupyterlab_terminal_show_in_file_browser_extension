@@ -6,12 +6,12 @@ author_email: konrad.jelen@gmail.com
 author_name: Stellars Henson
 has_ai_rules: false
 has_binder: false
-has_settings: false
-kind: frontend
+has_settings: true
+kind: frontend-and-server
 labextension_name: '@stellarshenson/jupyterlab-terminal-show-in-file-browser-extension'
 project_short_description: Jupyterlab extension to add context menu item to the terminal
     tab to navigate file browser to the pwd path of the terminal
 python_name: jupyterlab_terminal_show_in_file_browser_extension
-repository: ''
+repository: https://github.com/stellarshenson/jupyterlab_terminal_show_in_file_browser_extension
 test: true
 

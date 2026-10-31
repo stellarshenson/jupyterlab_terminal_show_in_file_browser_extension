@@ -32,29 +32,29 @@ jobs:
         jlpm
         jlpm run lint:check
 
-    - name: Test the extension (frontend)
+    - name: Test the extension
       run: |
         set -eux
         jlpm run build
         jlpm run test
 
-    - name: Test the extension (Python)
-      run: |
-        set -eux
-        python -m pip install ".[test]"
-        python -m pytest
-
     - name: Build the extension
       run: |
         set -eux
-        python -m pip install .
+        python -m pip install .[test]
 
+        pytest -vv -r ap --cov jupyterlab_terminal_show_in_file_browser_extension
         jupyter server extension list
         jupyter server extension list 2>&1 | grep -ie "jupyterlab_terminal_show_in_file_browser_extension.*OK"
 
         jupyter labextension list
         jupyter labextension list 2>&1 | grep -ie "@stellarshenson/jupyterlab-terminal-show-in-file-browser-extension.*OK"
         python -m jupyterlab.browser_check
+
+    - name: Check that all endpoints are authenticated
+      run: |
+        set -eux
+        python .github/scripts/check_auth.py
 
     - name: Package the extension
       run: |
@@ -173,4 +173,4 @@ jobs:
           python_version: '3.13'
       - uses: jupyterlab/maintainer-tools/.github/actions/check-links@v1
         with:
-          ignore_links: "https://www.npmjs.com/package/.* https://pepy.tech/.* https://static.pepy.tech/.* https://kolomolo.com"
+          ignore_links: "https://www.youtube.com/.* https://www.npmjs.com/package/.* https://pepy.tech/.* https://static.pepy.tech/.* https://kolomolo.com"
