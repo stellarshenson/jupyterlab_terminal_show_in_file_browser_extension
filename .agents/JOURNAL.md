@@ -69,3 +69,6 @@ This journal tracks substantive work on documents, diagrams, and documentation c
 
 22. **Task - Discovery block** (v1.0.33): added `jupyterlab.discovery` to `package.json` as the template v4.6.5 renders it<br>
     **Result**: The second audit of the extension fleet found this server extension without the block. The block names this package as the server side of the labextension, so JupyterLab can name it when the server side is missing. The rest of `package.json` is unchanged. `jlpm install --immutable`, `jlpm build:lib`, `jlpm run lint:check` and `template_sync.py --check` pass.
+
+23. **Task - Build lifecycle brought to Makefile 1.48** (v1.0.33): the canonical Makefile went to every extension on 2026-11-02<br>
+    **Result**: This project took Makefile 1.48 verbatim; `mrproper` now removes `tmp`, `logs`, `.venv`, `graphify-out`, `coverage` and `.pytest_cache`; `install` and `publish` are `.NOTPARALLEL`; the cleaned tree carries the tag `CHECKPOINT_JUPYTERLAB_4.6.5_UPGRADE_PORTED_1.0.33`. `make mrproper` exited 0 and CI on `760b3a6` is green.
