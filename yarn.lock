@@ -2825,7 +2825,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jupyterlab/ui-components@npm:^4.6.5":
+"@jupyterlab/ui-components@npm:^4.6.0, @jupyterlab/ui-components@npm:^4.6.5":
   version: 4.6.5
   resolution: "@jupyterlab/ui-components@npm:4.6.5"
   dependencies:
@@ -3575,6 +3575,7 @@ __metadata:
     "@jupyterlab/terminal": ^4.6.0
     "@jupyterlab/testutils": ^4.6.0
     "@jupyterlab/translation": ^4.6.0
+    "@jupyterlab/ui-components": ^4.6.0
     "@types/jest": ^29.5.0
     "@types/json-schema": ^7.0.11
     "@types/react": ^18.3.0
