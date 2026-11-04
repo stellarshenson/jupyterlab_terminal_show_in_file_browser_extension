@@ -12,14 +12,19 @@ const tab = (page: IJupyterLabPageFixture, text: string) =>
 
 const openTerminal = async (
   page: IJupyterLabPageFixture,
-  cwd: string
+  cwd: string,
+  name?: string
 ): Promise<void> => {
-  await page.evaluate(async cwd => {
-    await (window as any).jupyterapp.commands.execute('terminal:create-new', {
-      cwd
-    });
-  }, cwd);
-  await page.locator('.jp-Terminal').waitFor();
+  await page.evaluate(
+    async args => {
+      await (window as any).jupyterapp.commands.execute(
+        'terminal:create-new',
+        args
+      );
+    },
+    { cwd, name }
+  );
+  await page.locator('.jp-Terminal:visible').first().waitFor();
 };
 
 const browserPath = (page: IJupyterLabPageFixture): Promise<string> =>
@@ -67,6 +72,9 @@ test.describe('Show in File Browser menu item', () => {
       'data-command',
       'terminal:show-in-file-browser'
     );
+    await expect(shownItems(page).locator('.lm-Menu-itemIcon svg')).toHaveCount(
+      1
+    );
     await shownItems(page).click();
     await expect.poll(() => browserPath(page)).toBe(folder);
   });
@@ -83,5 +91,23 @@ test.describe('Show in File Browser menu item', () => {
       'data-command',
       'terminal:show-in-file-browser'
     );
+  });
+
+  test('an inactive terminal tab acts on that terminal, not the active one', async ({
+    page,
+    tmpPath
+  }) => {
+    const first = `${tmpPath}/first`;
+    const second = `${tmpPath}/second`;
+    await page.contents.uploadContent('hello', 'text', `${first}/note.txt`);
+    await page.contents.uploadContent('hello', 'text', `${second}/note.txt`);
+    await page.filebrowser.openDirectory(tmpPath);
+    await openTerminal(page, first, 'first');
+    await openTerminal(page, second, 'second');
+    await tab(page, 'Terminal first').click({ button: 'right' });
+    await expect(page.locator('.lm-Menu')).toBeVisible();
+    await expect(shownItems(page)).toHaveCount(1);
+    await shownItems(page).click();
+    await expect.poll(() => browserPath(page)).toBe(first);
   });
 });

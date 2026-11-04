@@ -8,6 +8,7 @@ import { showErrorMessage } from '@jupyterlab/apputils';
 import { ServerConnection } from '@jupyterlab/services';
 import { URLExt, PageConfig } from '@jupyterlab/coreutils';
 import { ITranslator, nullTranslator } from '@jupyterlab/translation';
+import { folderIcon } from '@jupyterlab/ui-components';
 
 /**
  * The command ID for showing terminal cwd in file browser.
@@ -154,24 +155,26 @@ const plugin: JupyterFrontEndPlugin<void> = {
     // opened on a terminal - on its tab or inside it - is decided here: a tab
     // holds its widget's id in data-id. On any other tab the item is hidden,
     // so a document tab keeps JupyterLab's own "Show in File Browser" alone.
-    const openedOnTerminal = (): boolean => {
+    const contextMenuTerminal = () => {
       const node = app.contextMenuHitTest(
         node =>
           node.classList.contains('lm-TabBar-tab') ||
           node.classList.contains('jp-Terminal')
       );
-      return (
-        node !== undefined &&
-        terminalTracker.find(
-          widget =>
-            widget.id === node.dataset.id || widget.content.node === node
-        ) !== undefined
-      );
+      return node === undefined
+        ? undefined
+        : terminalTracker.find(
+            widget =>
+              widget.id === node.dataset.id || widget.content.node === node
+          );
     };
+
+    const openedOnTerminal = (): boolean => contextMenuTerminal() !== undefined;
 
     // Add the command
     commands.addCommand(COMMAND_ID, {
       label: trans.__('Show in File Browser'),
+      icon: folderIcon,
       caption: trans.__('Navigate file browser to terminal current directory'),
       describedBy: { args: { type: 'object', properties: {} } },
       isVisible: openedOnTerminal,
@@ -180,7 +183,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
         return widget !== null;
       },
       execute: async () => {
-        const widget = terminalTracker.currentWidget;
+        const widget = contextMenuTerminal() ?? terminalTracker.currentWidget;
         if (!widget) {
           await showErrorMessage('No Terminal', 'No active terminal found.');
           return;

@@ -2,6 +2,21 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## [1.0.34] - 2026-11-04
+
+### Added
+
+- The "Show in File Browser" menu item now shows the folder icon, the same icon the AI assistants extension uses
+- The project keeps `docs/acc-crit.md` and `docs/defects.md`; its seven acceptance criteria cover the menu item, navigation and the server-side working-directory resolver
+
+### Changed
+
+- Project instructions move to `.agents/AGENTS.md`, with `.claude/CLAUDE.md`, `.claude/skills` and `.claude/commands` linked to it
+
+### Fixed
+
+- Right-clicking a terminal tab that is not active now opens that terminal's directory; the command acted on the last-focused terminal instead
+
 ## [1.0.33] - 2026-10-31
 
 ### Changed
