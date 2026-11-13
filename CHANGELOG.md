@@ -2,6 +2,12 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## [1.0.36] - 2026-11-13
+
+### Fixed
+
+- Resolve the server root on the server, show the file browser, no terminal for an unknown name
+
 ## [1.0.34] - 2026-11-04
 
 ### Added
