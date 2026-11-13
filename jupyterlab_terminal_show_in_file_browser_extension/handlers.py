@@ -33,7 +33,9 @@ class TerminalCwdHandler(APIHandler):
                 return
 
             # Get the terminal instance
-            terminal = terminal_manager.get_terminal(terminal_name)
+            # .terminals, not get_terminal(): that one creates a terminal
+            # for an unknown name.
+            terminal = terminal_manager.terminals.get(terminal_name)
 
             if terminal is None:
                 self.set_status(404)
@@ -64,7 +66,8 @@ class TerminalCwdHandler(APIHandler):
 
             self.finish(json.dumps({
                 "terminal_name": terminal_name,
-                "cwd": cwd
+                "cwd": cwd,
+                "root": self._server_root()
             }))
 
         except Exception as e:
@@ -73,6 +76,15 @@ class TerminalCwdHandler(APIHandler):
             self.finish(json.dumps({
                 "error": "Internal error determining terminal cwd"
             }))
+
+    def _server_root(self) -> str:
+        """The server root as the absolute, symlink-free path /proc reports.
+
+        The server root setting has the home directory collapsed to '~', and
+        only the server knows which directory that is.
+        """
+        root = self.settings.get("server_root_dir", "")
+        return os.path.realpath(os.path.expanduser(root))
 
     def _get_process_cwd(self, pid: int) -> str | None:
         """Get the current working directory for a terminal's shell process.

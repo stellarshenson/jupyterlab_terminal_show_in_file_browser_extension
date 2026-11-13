@@ -6,7 +6,7 @@ import { IDefaultFileBrowser } from '@jupyterlab/filebrowser';
 import { ITerminalTracker } from '@jupyterlab/terminal';
 import { showErrorMessage } from '@jupyterlab/apputils';
 import { ServerConnection } from '@jupyterlab/services';
-import { URLExt, PageConfig } from '@jupyterlab/coreutils';
+import { URLExt } from '@jupyterlab/coreutils';
 import { ITranslator, nullTranslator } from '@jupyterlab/translation';
 import { folderIcon } from '@jupyterlab/ui-components';
 
@@ -21,6 +21,7 @@ const COMMAND_ID = 'terminal:show-in-file-browser';
 interface ITerminalCwdResponse {
   terminal_name: string;
   cwd: string;
+  root: string;
   error?: string;
 }
 
@@ -28,9 +29,12 @@ interface ITerminalCwdResponse {
  * Fetch the current working directory for a terminal from the server.
  *
  * @param terminalName - The name of the terminal
- * @returns Promise resolving to the cwd path or null if not available
+ * @returns Promise resolving to the cwd and the server root, both absolute,
+ * or null if not available
  */
-async function fetchTerminalCwd(terminalName: string): Promise<string | null> {
+async function fetchTerminalCwd(
+  terminalName: string
+): Promise<ITerminalCwdResponse | null> {
   const settings = ServerConnection.makeSettings();
   const url = URLExt.join(
     settings.baseUrl,
@@ -48,8 +52,7 @@ async function fetchTerminalCwd(terminalName: string): Promise<string | null> {
       return null;
     }
 
-    const data = (await response.json()) as ITerminalCwdResponse;
-    return data.cwd;
+    return (await response.json()) as ITerminalCwdResponse;
   } catch (error) {
     console.error('Error fetching terminal cwd:', error);
     return null;
@@ -57,39 +60,10 @@ async function fetchTerminalCwd(terminalName: string): Promise<string | null> {
 }
 
 /**
- * Expand tilde in path using the home directory extracted from absolutePath.
- *
- * @param path - Path that may contain ~
- * @param absolutePath - An absolute path to extract home directory from
- * @returns Path with ~ expanded, or original if expansion not possible
- */
-function expandTilde(path: string, absolutePath: string): string {
-  if (!path.startsWith('~')) {
-    return path;
-  }
-
-  // Extract home directory from absolute path
-  // Matches /home/username or /Users/username
-  const match = absolutePath.match(/^(\/(?:home|Users)\/[^/]+)/);
-  if (!match) {
-    return path;
-  }
-
-  const homedir = match[1];
-  if (path === '~') {
-    return homedir;
-  }
-  if (path.startsWith('~/')) {
-    return homedir + path.slice(1);
-  }
-  return path;
-}
-
-/**
  * Convert an absolute filesystem path to a path relative to the server root.
  *
  * @param absolutePath - The absolute filesystem path
- * @param serverRoot - The server's root directory (may contain ~)
+ * @param serverRoot - The server's root directory, absolute
  * @returns The relative path for the file browser, or null if outside server root
  */
 function toRelativePath(
@@ -99,11 +73,7 @@ function toRelativePath(
   // Normalize cwd - ensure no trailing slashes
   const normalizedCwd = absolutePath.replace(/\/+$/, '');
 
-  // Expand tilde in serverRoot and normalize
-  const normalizedRoot = expandTilde(serverRoot, absolutePath).replace(
-    /\/+$/,
-    ''
-  );
+  const normalizedRoot = serverRoot.replace(/\/+$/, '');
 
   // Check if cwd is the server root
   if (normalizedCwd === normalizedRoot) {
@@ -144,11 +114,6 @@ const plugin: JupyterFrontEndPlugin<void> = {
     const trans = (translator ?? nullTranslator).load(
       'jupyterlab_terminal_show_in_file_browser_extension'
     );
-
-    // Get the server root directory from PageConfig
-    // This is the notebook_dir where Jupyter server was started
-    const serverRoot = PageConfig.getOption('serverRoot');
-    // console.log(`Server root: ${serverRoot}`);
 
     // The tab selector in schema/plugin.json matches every main-area tab, and
     // a tab carries no mark of its widget's kind. Whether the context menu was
@@ -201,9 +166,9 @@ const plugin: JupyterFrontEndPlugin<void> = {
         const terminalName = session.model.name;
 
         // Fetch cwd from server
-        const cwd = await fetchTerminalCwd(terminalName);
+        const data = await fetchTerminalCwd(terminalName);
 
-        if (!cwd) {
+        if (!data?.cwd) {
           await showErrorMessage(
             'CWD Not Available',
             'Could not determine terminal current directory. ' +
@@ -212,30 +177,21 @@ const plugin: JupyterFrontEndPlugin<void> = {
           return;
         }
 
-        // console.log(`Terminal cwd: ${cwd}`);
-        // console.log(`Server root: ${serverRoot}`);
-
         // Convert absolute path to relative path for file browser
-        const relativePath = toRelativePath(cwd, serverRoot);
+        const relativePath = toRelativePath(data.cwd, data.root);
 
         // If outside workspace, fallback to workspace root
         const targetPath = relativePath === null ? '' : relativePath;
-        // if (relativePath === null) {
-        //   console.log(`Terminal cwd outside workspace, navigating to root`);
-        // }
-
-        // console.log(`Relative path: "${targetPath}"`);
 
         try {
           // Navigate using absolute path from root
           // Use '/' prefix to ensure navigation from workspace root, not current directory
           const absolutePath = targetPath === '' ? '/' : '/' + targetPath;
-          // console.log(`Navigating to absolute path: "${absolutePath}"`);
 
           await fileBrowser.model.cd(absolutePath);
-          // console.log(
-          //   `File browser navigated to: ${targetPath || '(root)'}`
-          // );
+          // Show the file browser: the sidebar may be collapsed or on
+          // another panel.
+          app.shell.activateById(fileBrowser.id);
         } catch (error) {
           console.error('Failed to navigate file browser:', error);
           await showErrorMessage(
@@ -246,8 +202,6 @@ const plugin: JupyterFrontEndPlugin<void> = {
         }
       }
     });
-
-    // console.log(`Command registered: ${COMMAND_ID}`);
   }
 };
 

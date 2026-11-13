@@ -27,6 +27,7 @@ class MockHandler:
     _get_recovered_cwd = TerminalCwdHandler._get_recovered_cwd
     _nearest_existing_dir = TerminalCwdHandler._nearest_existing_dir
     _get_process_cwd = TerminalCwdHandler._get_process_cwd
+    _server_root = TerminalCwdHandler._server_root
 
 
 @pytest.fixture
@@ -294,3 +295,26 @@ class TestIsValidCwd:
     def test_rejects_nonexistent_directory(self, handler):
         """Should reject paths that don't exist."""
         assert handler._is_valid_cwd('/nonexistent/fake/path') is False
+
+
+class TestServerRoot:
+    """Tests for _server_root: the root the frontend compares the cwd with."""
+
+    def test_expands_home_and_resolves_symlinks(self, handler, tmp_path, monkeypatch):
+        """'~/link' becomes the real absolute path, whatever the home is."""
+        (tmp_path / "work").mkdir()
+        (tmp_path / "link").symlink_to(tmp_path / "work")
+        monkeypatch.setenv("HOME", str(tmp_path))
+        handler.settings = {"server_root_dir": "~/link"}
+        assert handler._server_root() == os.path.realpath(tmp_path / "work")
+
+
+async def test_unknown_terminal_is_404_and_starts_none(jp_fetch, jp_serverapp):
+    """A request for an unknown name must not create that terminal."""
+    from tornado.httpclient import HTTPClientError
+
+    with pytest.raises(HTTPClientError) as error:
+        await jp_fetch("api", "terminal-cwd", "nope")
+    assert error.value.code == 404
+    manager = jp_serverapp.web_app.settings["terminal_manager"]
+    assert "nope" not in manager.terminals
