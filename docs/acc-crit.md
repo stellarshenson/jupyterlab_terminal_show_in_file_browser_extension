@@ -44,6 +44,16 @@ Placement and appearance of the Show in File Browser context-menu item
   - test-tags: E2E
   - log: 2026-11-04T20:24:03Z @kj added
   - log: 2026-11-04T20:25:44Z @kj closed: Galata run 2026-11-04 green
+- [x] `ACC-MENU-8-PANEL-SWITCH` **Left sidebar switches to the file browser** - HIGH; after Show in File Browser the left sidebar shows the file browser panel, whichever other panel it showed before
+  - related: DEF-MENU-3-HIDDEN-BROWSER - the defect whose fix added the activation
+  - evidence: Galata 7 passed, 0 failed on 2026-11-14 (logs/galata-left-pane.log): 'the item switches the left sidebar from another panel to the file browser' saw the file browser tab not open with Running shown, then open after the click
+  - test-tags: E2E
+  - test: Galata: open the Running panel in the left sidebar, click the item on a terminal tab, assert the file browser panel is visible
+  - mechanism: 2026-11-14T10:10:56Z @kj execute calls app.shell.activateById(fileBrowser.id) after fileBrowser.model.cd
+  - log: 2026-11-14T10:10:56Z @kj added
+  - log: 2026-11-14T10:18:10Z @kj edited test-tags added "E2E"
+  - log: 2026-11-14T10:18:10Z @kj closed: closed: Galata run 2026-11-14 green
+  - log: 2026-11-14T10:28:01Z @kj related DEF-MENU-3-HIDDEN-BROWSER removed, line read "DEF-MENU-3-HIDDEN-BROWSER - the defect whose fix added the activation; its evidence says no test" - related line reworded: the defect now has a Galata test
 
 ## Working Directory `CWD`
 

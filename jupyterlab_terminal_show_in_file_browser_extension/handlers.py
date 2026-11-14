@@ -1,11 +1,13 @@
 """
 API handlers for terminal cwd retrieval.
 """
+import asyncio
 import json
 import os
 import subprocess
 import sys
 
+from jupyter_core.paths import is_hidden
 from jupyter_server.base.handlers import APIHandler
 from jupyter_server.utils import url_path_join
 import tornado
@@ -55,7 +57,8 @@ class TerminalCwdHandler(APIHandler):
                 return
 
             pid = ptyproc.pid
-            cwd = self._get_process_cwd(pid)
+            # A worker thread: lsof on macOS blocks for up to 5 s.
+            cwd = await asyncio.to_thread(self._get_process_cwd, pid)
 
             if cwd is None:
                 self.set_status(500)
@@ -63,6 +66,9 @@ class TerminalCwdHandler(APIHandler):
                     "error": "Could not determine terminal cwd"
                 }))
                 return
+
+            # The contents manager refuses a hidden folder with a 404.
+            cwd = self._nearest_visible_dir(cwd)
 
             self.finish(json.dumps({
                 "terminal_name": terminal_name,
@@ -150,6 +156,26 @@ class TerminalCwdHandler(APIHandler):
         except OSError:
             return None
         return self._nearest_existing_dir(raw)
+
+    def _nearest_visible_dir(self, cwd: str) -> str:
+        """Walk a cwd inside the server root up to the nearest folder the
+        contents manager serves when allow_hidden is False.
+
+        Uses the same is_hidden check as the contents manager. A cwd outside
+        the root, or any cwd when allow_hidden is True, is returned unchanged.
+
+        Args:
+            cwd: The resolved absolute cwd
+
+        Returns:
+            The nearest folder that is not hidden (the root at worst)
+        """
+        if self.contents_manager.allow_hidden:
+            return cwd
+        root = self._server_root()
+        while os.path.commonpath([root, cwd]) == root and is_hidden(cwd, root):
+            cwd = os.path.dirname(cwd)
+        return cwd
 
     def _nearest_existing_dir(self, path: str) -> str | None:
         """Walk up to the nearest existing ancestor of a possibly-deleted path.

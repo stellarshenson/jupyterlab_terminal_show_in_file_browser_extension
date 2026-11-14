@@ -110,4 +110,36 @@ test.describe('Show in File Browser menu item', () => {
     await shownItems(page).click();
     await expect.poll(() => browserPath(page)).toBe(first);
   });
+
+  test('the item switches the left sidebar from another panel to the file browser', async ({
+    page,
+    tmpPath
+  }) => {
+    const folder = `${tmpPath}/sub`;
+    await page.contents.uploadContent('hello', 'text', `${folder}/note.txt`);
+    await openTerminal(page, folder);
+    await page.sidebar.openTab('jp-running-sessions');
+    expect(await page.sidebar.isTabOpen('filebrowser')).toBe(false);
+
+    await tab(page, 'Terminal').click({ button: 'right' });
+    await shownItems(page).click();
+    await expect.poll(() => page.sidebar.isTabOpen('filebrowser')).toBe(true);
+    expect(await browserPath(page)).toBe(folder);
+  });
+
+  test('the item opens a collapsed left sidebar on the file browser', async ({
+    page,
+    tmpPath
+  }) => {
+    const folder = `${tmpPath}/sub`;
+    await page.contents.uploadContent('hello', 'text', `${folder}/note.txt`);
+    await openTerminal(page, folder);
+    await page.sidebar.close('left');
+    await expect(page.locator('#filebrowser')).toBeHidden();
+
+    await tab(page, 'Terminal').click({ button: 'right' });
+    await shownItems(page).click();
+    await expect(page.locator('#filebrowser')).toBeVisible();
+    await expect.poll(() => browserPath(page)).toBe(folder);
+  });
 });

@@ -20,9 +20,10 @@ Navigate the file browser to your terminal's current working directory with a si
 
 - **Context menu on terminal tabs** - Right-click any terminal tab to reveal "Show in File Browser" option
 - **Context menu in terminal area** - Also available when right-clicking inside the terminal
+- **Shows the file browser** - The left sidebar switches to the file browser, also from another panel or when collapsed
 - **Server-side cwd detection** - Accurately determines terminal's working directory via process inspection
 - **Cross-platform support** - Works on Linux (via /proc) and macOS (via lsof)
-- **Graceful fallback** - Navigates to workspace root if terminal is outside the Jupyter workspace
+- **Graceful fallback** - Navigates to workspace root if terminal is outside the Jupyter workspace, and to the nearest folder the file browser can show if the terminal's folder was deleted or is hidden
 
 ## Installation
 

@@ -4,8 +4,10 @@ Tests for terminal cwd handler.
 Tests the helper methods that detect process cwd without requiring
 a running Jupyter server.
 """
+import json
 import os
 import sys
+import threading
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -318,3 +320,51 @@ async def test_unknown_terminal_is_404_and_starts_none(jp_fetch, jp_serverapp):
     assert error.value.code == 404
     manager = jp_serverapp.web_app.settings["terminal_manager"]
     assert "nope" not in manager.terminals
+
+
+@pytest.mark.parametrize("allow_hidden, cwd, expected", [
+    (False, ".venv/lib", ""),
+    (False, "proj/.git/hooks", "proj"),
+    (True, ".venv", ".venv"),
+])
+async def test_hidden_cwd_becomes_nearest_visible_folder(
+    jp_fetch, jp_serverapp, jp_root_dir, monkeypatch, allow_hidden, cwd, expected
+):
+    """The contents manager refuses a hidden folder unless allow_hidden, so
+    the response names the nearest folder the file browser can open."""
+    root = os.path.realpath(jp_root_dir)
+    os.makedirs(os.path.join(root, cwd))
+    jp_serverapp.contents_manager.allow_hidden = allow_hidden
+    manager = jp_serverapp.web_app.settings["terminal_manager"]
+    monkeypatch.setitem(manager.terminals, "t", MagicMock())
+    monkeypatch.setattr(TerminalCwdHandler, "_get_process_cwd",
+                        lambda self, pid: os.path.join(root, cwd))
+
+    response = await jp_fetch("api", "terminal-cwd", "t")
+
+    body = json.loads(response.body)
+    assert body["cwd"] == os.path.join(root, expected).rstrip(os.sep)
+    assert body["root"] == root
+
+
+async def test_cwd_lookup_runs_off_the_event_loop(
+    jp_fetch, jp_serverapp, jp_root_dir, monkeypatch
+):
+    """The lookup can block (lsof on macOS, up to 5 s), so it must run in a
+    worker thread and leave the event loop free for other requests."""
+    root = os.path.realpath(jp_root_dir)
+    loop_thread = threading.get_ident()
+    lookup_threads = []
+
+    def lookup(self, pid):
+        lookup_threads.append(threading.get_ident())
+        return root
+
+    manager = jp_serverapp.web_app.settings["terminal_manager"]
+    monkeypatch.setitem(manager.terminals, "t", MagicMock())
+    monkeypatch.setattr(TerminalCwdHandler, "_get_process_cwd", lookup)
+
+    response = await jp_fetch("api", "terminal-cwd", "t")
+
+    assert lookup_threads and lookup_threads[0] != loop_thread
+    assert json.loads(response.body)["cwd"] == root

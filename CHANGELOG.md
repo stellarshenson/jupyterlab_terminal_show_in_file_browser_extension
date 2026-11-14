@@ -2,6 +2,17 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## [1.0.37] - 2026-11-14
+
+### Added
+
+- Galata tests prove that Show in File Browser switches the left sidebar to the file browser, from another panel and from a collapsed sidebar
+
+### Fixed
+
+- A terminal in a hidden folder such as `.venv`, on a server that hides them (`ContentsManager.allow_hidden=False`, the default), now opens the nearest folder the file browser can show; before, JupyterLab showed "Directory not found" and then the root
+- The server looks up the terminal's folder in a worker thread, so the macOS `lsof` call no longer holds up other requests to the server
+
 ## [1.0.36] - 2026-11-13
 
 ### Fixed
